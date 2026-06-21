@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getDeal } from './dataSource';
 import { LensView } from './components/LensView';
+import { HideAppChrome } from './components/HideAppChrome';
 
 export const metadata: Metadata = {
   title: 'Ledger Lens · Tacit',
@@ -11,5 +12,10 @@ export const metadata: Metadata = {
 // At P3, getDeal() reads the live Canton ledger; this file stays unchanged.
 export default async function LensPage() {
   const deal = await getDeal();
-  return <LensView deal={deal} />;
+  return (
+    <>
+      <HideAppChrome />
+      <LensView deal={deal} />
+    </>
+  );
 }

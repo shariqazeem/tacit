@@ -1,0 +1,15 @@
+/* Demo hygiene — Ledger Lens route ONLY.
+ *
+ * The floating "N" at the screen edge is the Next.js DEV-TOOLS indicator
+ * (a <nextjs-portal> element), NOT an app/ClientLayout component. It exists
+ * only under `next dev` and is absent from production builds, so the live
+ * product never shows it. We hide it on the Lens route purely so headless /
+ * full-screen captures have a clean edge.
+ *
+ * Scoped to `body.lens-route`, which HideAppChrome toggles on mount/unmount —
+ * so every other route is untouched and the indicator returns when you leave
+ * the Lens. (Also suppresses dev error overlays on this route; acceptable for a
+ * verified demo screen.) Chrome only: no effect on Lens visibility/data. */
+body.lens-route nextjs-portal {
+  display: none !important;
+}
