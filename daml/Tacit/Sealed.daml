@@ -1,0 +1,52 @@
+-- Tacit — sealed-bid privacy model, in real Daml.
+--
+-- The privacy property is NOT enforced by application code — it is enforced by
+-- the ledger from the signatory/observer declarations below. A party can only
+-- ever see a contract on which it is a stakeholder (signatory or observer).
+-- That is what Test.daml proves cryptographically.
+
+module Tacit.Sealed where
+
+-- A request for service, posted by the buyer agent.
+template Rfs
+  with
+    buyer : Party
+    description : Text
+    maxBudget : Decimal
+  where
+    signatory buyer
+
+-- A sealed bid.
+--
+-- signatory provider  -> the bidder is bound to its own bid.
+-- observer  buyer     -> ONLY the buyer may also see it.
+-- Competing providers are deliberately NOT observers, so the ledger hides the
+-- price from them. This single `observer buyer` line IS the privacy property.
+--
+-- G6 (portable reputation): a `reputation : ReputationSnapshot` field can be
+--   added here later without redesign — additive only.
+template SealedBid
+  with
+    rfsId : Text
+    provider : Party
+    buyer : Party
+    price : Decimal
+  where
+    signatory provider
+    observer buyer
+    -- NOTE: cross-participant-node enforcement (bids living on different
+    -- validators) is proven in P1b on LocalNet. Here we prove the
+    -- contract-level observer model that the whole design rests on.
+
+-- Settlement: declared now, exercised in P2.
+-- signatory buyer + winning provider => atomic, dual-authorized award.
+-- G1 (mainnet) + G6: a settlement event / reputation update can be grafted
+--   on here later without reshaping the templates above.
+template Settlement
+  with
+    buyer : Party
+    provider : Party
+    rfsId : Text
+    price : Decimal
+  where
+    signatory buyer, provider

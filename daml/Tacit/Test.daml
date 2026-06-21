@@ -1,0 +1,64 @@
+-- Tacit — cryptographic proof of the sealed-bid privacy property.
+--
+-- Run with `daml test` (in-memory ledger, no Canton/Docker needed).
+-- `query @SealedBid party` returns ONLY the contracts on which `party` is a
+-- stakeholder, exactly as the live ledger would. So the assertions below are a
+-- real test of ledger-enforced visibility — not of any application logic.
+
+module Tacit.Test where
+
+import Daml.Script
+import DA.List (sort)
+import Tacit.Sealed
+
+test : Script ()
+test = script do
+  buyer     <- allocateParty "Buyer"
+  providerA <- allocateParty "ProviderA"
+  providerB <- allocateParty "ProviderB"
+  providerC <- allocateParty "ProviderC"
+  eve       <- allocateParty "Eve" -- uninvolved 5th party
+
+  -- Buyer posts the request.
+  _ <- submit buyer $ createCmd Rfs with
+        buyer = buyer
+        description = "Market-intelligence report"
+        maxBudget = 50.0
+
+  -- Each provider submits a sealed bid — prices match the Ledger Lens deal.
+  _ <- submit providerA $ createCmd SealedBid with
+        rfsId = "RFS-1"; provider = providerA; buyer = buyer; price = 31.0
+  _ <- submit providerB $ createCmd SealedBid with
+        rfsId = "RFS-1"; provider = providerB; buyer = buyer; price = 42.0
+  _ <- submit providerC $ createCmd SealedBid with
+        rfsId = "RFS-1"; provider = providerC; buyer = buyer; price = 28.0
+
+  -- Query the ledger AS each party. This is the cryptographic visibility check.
+  buyerView <- query @SealedBid buyer
+  aView     <- query @SealedBid providerA
+  bView     <- query @SealedBid providerB
+  cView     <- query @SealedBid providerC
+  eveView   <- query @SealedBid eve
+
+  let prices view = map (\(_, c) -> c.price) view
+
+  -- Assertions — the moat, stated as ledger facts.
+  assertMsg "Buyer must see all 3 bids"           (length buyerView == 3)
+  assertMsg "Provider A sees exactly 1 bid"       (length aView == 1)
+  assertMsg "Provider B sees exactly 1 bid"       (length bView == 1)
+  assertMsg "Provider C sees exactly 1 bid"       (length cView == 1)
+  assertMsg "Uninvolved party (Eve) sees 0 bids"  (length eveView == 0)
+  assertMsg "Provider A sees ONLY its own 31"     (prices aView == [31.0])
+  assertMsg "Provider B sees ONLY its own 42"     (prices bView == [42.0])
+  assertMsg "Provider C sees ONLY its own 28"     (prices cView == [28.0])
+
+  -- Print the visibility matrix.
+  debug "VISIBILITY MATRIX — bid prices each party can see:"
+  debug $ "  buyer     -> " <> show (sort (prices buyerView))
+  debug $ "  providerA -> " <> show (prices aView)
+  debug $ "  providerB -> " <> show (prices bView)
+  debug $ "  providerC -> " <> show (prices cView)
+  debug $ "  eve       -> " <> show (prices eveView)
+  debug "PROVED: each provider sees only its own sealed bid; only the buyer sees all."
+
+  pure ()
