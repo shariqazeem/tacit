@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { getDeal } from './dataSource';
-import { LensView } from './components/LensView';
+import { LensExperience } from './components/LensExperience';
 import { HideAppChrome } from './components/HideAppChrome';
 
 export const metadata: Metadata = {
@@ -15,7 +15,7 @@ export default async function LensPage() {
   return (
     <>
       <HideAppChrome />
-      <LensView deal={deal} />
+      <LensExperience seedDeal={deal} />
     </>
   );
 }
