@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { negotiateCore, buildDealFromCore } from '@/app/lens/agents/negotiation';
 import { ledgerReachable } from '@/app/lens/ledger/client';
 import { writeNegotiation, type LedgerRefs } from '@/app/lens/ledger/write';
+import { readDealFromLedger } from '@/app/lens/ledger/read';
 
 // Run one autonomous agent negotiation, persist it to the live Canton ledger
 // (when reachable), and return { transcript, deal, usedLLM, ledger }.
@@ -12,16 +13,26 @@ export const runtime = 'nodejs';
 
 async function handle(opts: { intent?: string; description?: string; budget?: number }) {
   const core = await negotiateCore(opts);
-  const deal = buildDealFromCore(core);
+  let deal = buildDealFromCore(core); // in-memory fallback
+  let dealSource: 'ledger' | 'memory' = 'memory';
 
   let ledger: LedgerRefs = { written: false };
   if (await ledgerReachable()) {
     ledger = await writeNegotiation(core);
+    if (ledger.written && ledger.ledgerRfsId && ledger.parties) {
+      try {
+        // Read the deal back per-party so visibility is derived from the ledger.
+        deal = await readDealFromLedger(ledger.ledgerRfsId, ledger.parties, core);
+        dealSource = 'ledger';
+      } catch {
+        /* keep in-memory deal */
+      }
+    }
   } else {
     ledger = { written: false, error: 'ledger unreachable' };
   }
 
-  return NextResponse.json({ transcript: core.transcript, deal, usedLLM: core.usedLLM, ledger });
+  return NextResponse.json({ transcript: core.transcript, deal, usedLLM: core.usedLLM, ledger, dealSource });
 }
 
 export async function GET(req: Request) {
