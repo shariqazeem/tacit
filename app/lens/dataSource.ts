@@ -61,8 +61,9 @@ const SEED_DEAL: Deal = {
     },
   ],
   settlement: {
+    // Static sample shown before a live run — honest, non-ledger copy.
     status: {
-      value: 'Settled atomically',
+      value: 'Sample deal',
       visibleTo: ['public', ...PARTICIPANTS],
     },
     winner: {
@@ -74,12 +75,11 @@ const SEED_DEAL: Deal = {
       visibleTo: ['buyer', 'providerC'],
     },
     txId: {
-      // P3: real Daml transaction hash, deep-linked to the ledger.
-      value: '0x9f3a…c41e',
+      value: '— run live for a contract id',
       visibleTo: ['buyer', 'providerC'],
     },
     commitment: {
-      value: 'tx committed · contents private',
+      value: 'illustrative · not on ledger',
       visibleTo: ['public', ...PARTICIPANTS],
     },
   },

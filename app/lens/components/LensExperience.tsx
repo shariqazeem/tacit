@@ -24,7 +24,7 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [deal, setDeal] = useState<Deal>(seedDeal);
   const [transcript, setTranscript] = useState<Step[]>([]);
-  const [usedLLM, setUsedLLM] = useState(false);
+  const [source, setSource] = useState<'ledger' | 'memory' | null>(null);
   const [ranOnce, setRanOnce] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -34,20 +34,22 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
     setPhase('running');
     setLoading(true);
     setTranscript([]);
+    setSource(null);
     setRanOnce(true);
     try {
       const res = await fetch('/api/negotiate', { cache: 'no-store' });
       if (!res.ok) throw new Error('bad status');
       const data = await res.json();
       setDeal(data.deal);
-      setUsedLLM(!!data.usedLLM);
+      setSource(data.dealSource === 'ledger' ? 'ledger' : 'memory');
       const t: Step[] = Array.isArray(data.transcript) ? data.transcript : [];
       setTranscript(t);
       setLoading(false);
       if (t.length === 0) setPhase('revealed');
     } catch {
-      // Engine unreachable → reveal the seed deal directly.
+      // Engine unreachable → reveal the seed deal as a clearly-labeled fallback.
       setDeal(seedDeal);
+      setSource('memory');
       setLoading(false);
       setPhase('revealed');
     }
@@ -58,17 +60,22 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
       {/* Control (hidden on idle — the hero owns the CTA there) */}
       {phase !== 'idle' && (
         <div className="fixed right-5 top-5 z-50 flex items-center gap-2">
-          {ranOnce && (
+          {ranOnce && source && (
             <span
-              className="rounded-full px-2.5 py-1 text-[11px] font-medium"
+              className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+              title={
+                source === 'ledger'
+                  ? 'Deal written to and read back from the live Canton ledger'
+                  : 'Canton ledger unreachable — deterministic in-memory simulation'
+              }
               style={{
                 fontFamily: MONO,
-                color: usedLLM ? '#0E7490' : '#9CA3AF',
-                background: usedLLM ? '#0E749014' : 'rgba(0,0,0,0.04)',
+                color: source === 'ledger' ? '#0E7490' : '#B45309',
+                background: source === 'ledger' ? '#0E749014' : '#B4530914',
                 border: '1px solid rgba(0,0,0,0.06)',
               }}
             >
-              {usedLLM ? 'LIVE AI' : 'SIMULATED'}
+              {source === 'ledger' ? 'ON CANTON' : 'DEMO FALLBACK'}
             </span>
           )}
           <button
@@ -110,7 +117,7 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
 
         {phase === 'revealed' && (
           <motion.div key="rev" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-            <LensView deal={deal} />
+            <LensView deal={deal} source={source} />
           </motion.div>
         )}
       </AnimatePresence>

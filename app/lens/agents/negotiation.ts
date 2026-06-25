@@ -103,7 +103,7 @@ export async function negotiateCore(opts: { intent?: string; description?: strin
   transcript.push({ actor: 'Buyer Agent', action: 'Compared bids', detail: `${bids.length} sealed bids received`, t: clock() });
   const winner = bids.reduce((best, b) => (b.price < best.price ? b : best), bids[0]);
   transcript.push({ actor: 'Buyer Agent', action: 'Awarded deal', detail: `${winner.label} selected`, t: clock() });
-  transcript.push({ actor: 'Tacit', action: 'Settled atomically', detail: 'Payment + delivery in one Canton transaction', t: clock() });
+  transcript.push({ actor: 'Tacit', action: 'Deal awarded', detail: 'Lowest sealed bid selected', t: clock() });
 
   return { rfs, bids, winner, transcript, usedLLM: raw.some((b) => b.source === 'llm') && llmAvailable() };
 }
@@ -132,11 +132,12 @@ export function buildDealFromCore(core: NegotiationCore): Deal {
     },
     bids: dealBids,
     settlement: {
-      status: { value: 'Settled atomically', visibleTo: ['public', ...PARTICIPANTS] },
+      // In-memory fallback (ledger unreachable) — honest, non-ledger copy.
+      status: { value: 'Simulated award', visibleTo: ['public', ...PARTICIPANTS] },
       winner: { value: winner.label, visibleTo: winnerObservers },
       amount: { value: winner.price, visibleTo: winnerObservers },
-      txId: { value: '0x9f3a…c41e', visibleTo: winnerObservers }, // P3.2: real Daml tx / contract id
-      commitment: { value: 'tx committed · contents private', visibleTo: ['public', ...PARTICIPANTS] },
+      txId: { value: 'ledger offline', visibleTo: winnerObservers },
+      commitment: { value: 'deterministic simulation', visibleTo: ['public', ...PARTICIPANTS] },
     },
   };
 }

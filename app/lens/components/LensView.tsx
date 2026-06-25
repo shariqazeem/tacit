@@ -12,7 +12,7 @@ const MONO = "'JetBrains Mono', ui-monospace, monospace";
 
 const usd = (n: number) => `$${n}`;
 
-export function LensView({ deal }: { deal: Deal }) {
+export function LensView({ deal, source }: { deal: Deal; source?: 'ledger' | 'memory' | null }) {
   const [persona, setPersona] = useState<Persona>('buyer');
   const active = PERSONAS.find((p) => p.id === persona) ?? PERSONAS[0];
 
@@ -93,8 +93,13 @@ export function LensView({ deal }: { deal: Deal }) {
           </Card>
         </div>
 
-        <p className="mt-8 text-center text-[12px]" style={{ color: '#9CA3AF', fontFamily: MONO }}>
-          Live on Canton · visibility enforced by the ledger · award executed by a Daml choice
+        <p
+          className="mt-8 text-center text-[12px]"
+          style={{ color: source === 'ledger' ? '#9CA3AF' : '#B45309', fontFamily: MONO }}
+        >
+          {source === 'ledger'
+            ? 'Live on Canton · visibility enforced by the ledger · award executed by a Daml choice'
+            : 'Demo fallback · deterministic simulation · start the Canton ledger for the live privacy proof'}
         </p>
       </div>
     </div>

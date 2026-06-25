@@ -18,6 +18,19 @@ const SECRET = process.env.DAML_TOKEN_SECRET || 'tacit-dev-secret';
 export const PACKAGE_ID =
   process.env.TACIT_PACKAGE_ID || '66e7ac22bcf8dce96c8449b584b85ba19e4dd03c48211b1d5990e0ceb3af5e04';
 
+/** Where the JSON Ledger API lives (host:port only — no secrets). For /api/health. */
+export const LEDGER_URL = JSON_API;
+/** True when the package id came from env rather than the hardcoded default. */
+export const PACKAGE_ID_FROM_ENV = !!process.env.TACIT_PACKAGE_ID;
+
+if (!PACKAGE_ID_FROM_ENV) {
+  // The package id changes whenever the DAR is rebuilt — warn so deploys notice.
+  console.warn(
+    `[tacit] TACIT_PACKAGE_ID not set — using hardcoded default ${PACKAGE_ID.slice(0, 8)}…. ` +
+      `Set TACIT_PACKAGE_ID after rebuilding the DAR.`,
+  );
+}
+
 export const T = {
   Rfs: `${PACKAGE_ID}:Tacit.Sealed:Rfs`,
   SealedBid: `${PACKAGE_ID}:Tacit.Sealed:SealedBid`,
@@ -37,7 +50,7 @@ function mint(claims: Record<string, unknown>): string {
 const adminToken = () => mint({ admin: true });
 const partyToken = (parties: string[]) => mint({ actAs: parties, readAs: parties });
 
-async function call(path: string, token: string, body?: unknown, method = 'POST', timeoutMs = 10000) {
+async function call(path: string, token: string, body?: unknown, method = 'POST', timeoutMs = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -65,6 +78,19 @@ export async function ledgerReachable(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Reachability + a human-readable error, for /api/health. */
+export async function ledgerHealth(): Promise<{ reachable: boolean; error: string | null }> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(JSON_API + '/livez', { signal: ctrl.signal });
+    clearTimeout(t);
+    return res.ok ? { reachable: true, error: null } : { reachable: false, error: `JSON API returned HTTP ${res.status}` };
+  } catch (e: any) {
+    return { reachable: false, error: String(e?.message || e) };
   }
 }
 
