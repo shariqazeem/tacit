@@ -1,14 +1,12 @@
--- Tacit — cryptographic proof of the sealed-bid privacy property.
+-- Tacit — proof of (a) ledger-enforced sealed-bid privacy and (b) atomic award.
 --
--- Run with `daml test` (in-memory ledger, no Canton/Docker needed).
--- `query @SealedBid party` returns ONLY the contracts on which `party` is a
--- stakeholder, exactly as the live ledger would. So the assertions below are a
--- real test of ledger-enforced visibility — not of any application logic.
+-- Run with `daml test` (in-memory ledger). `query @T party` returns ONLY the
+-- contracts on which `party` is a stakeholder — exactly as the live ledger
+-- would — so these assertions test ledger-enforced visibility, not app logic.
 
 module Tacit.Test where
 
 import Daml.Script
-import DA.List (sort)
 import Tacit.Sealed
 
 test : Script ()
@@ -17,48 +15,59 @@ test = script do
   providerA <- allocateParty "ProviderA"
   providerB <- allocateParty "ProviderB"
   providerC <- allocateParty "ProviderC"
-  eve       <- allocateParty "Eve" -- uninvolved 5th party
+  eve       <- allocateParty "Eve" -- unrelated party
 
-  -- Buyer posts the request.
-  _ <- submit buyer $ createCmd Rfs with
-        buyer = buyer
-        description = "Market-intelligence report"
-        maxBudget = 50.0
+  rfs <- submit buyer $ createCmd Rfs with
+    rfsId = "RFS-1"
+    buyer = buyer
+    description = "Market-intelligence report"
+    maxBudget = 50.0
 
-  -- Each provider submits a sealed bid — prices match the Ledger Lens deal.
-  _ <- submit providerA $ createCmd SealedBid with
-        rfsId = "RFS-1"; provider = providerA; buyer = buyer; price = 31.0
-  _ <- submit providerB $ createCmd SealedBid with
-        rfsId = "RFS-1"; provider = providerB; buyer = buyer; price = 42.0
-  _ <- submit providerC $ createCmd SealedBid with
-        rfsId = "RFS-1"; provider = providerC; buyer = buyer; price = 28.0
+  bidA <- submit providerA $ createCmd SealedBid with rfsId = "RFS-1"; provider = providerA; buyer = buyer; price = 31.0
+  bidB <- submit providerB $ createCmd SealedBid with rfsId = "RFS-1"; provider = providerB; buyer = buyer; price = 42.0
+  bidC <- submit providerC $ createCmd SealedBid with rfsId = "RFS-1"; provider = providerC; buyer = buyer; price = 28.0
 
-  -- Query the ledger AS each party. This is the cryptographic visibility check.
-  buyerView <- query @SealedBid buyer
-  aView     <- query @SealedBid providerA
-  bView     <- query @SealedBid providerB
-  cView     <- query @SealedBid providerC
-  eveView   <- query @SealedBid eve
+  -- (1-3) Sealed-bid visibility, while bids are active (before the award).
+  buyerBids <- query @SealedBid buyer
+  aBids <- query @SealedBid providerA
+  bBids <- query @SealedBid providerB
+  cBids <- query @SealedBid providerC
+  eveBids <- query @SealedBid eve
+  let priceOf rows = map (\(_, c) -> c.price) rows
+  assertMsg "buyer sees all 3 sealed bids"     (length buyerBids == 3)
+  assertMsg "provider A sees only its own (31)" (priceOf aBids == [31.0])
+  assertMsg "provider B sees only its own (42)" (priceOf bBids == [42.0])
+  assertMsg "provider C sees only its own (28)" (priceOf cBids == [28.0])
+  assertMsg "unrelated party (Eve) sees none"   (length eveBids == 0)
 
-  let prices view = map (\(_, c) -> c.price) view
+  -- (8) Over-budget award must fail (60 > maxBudget 50). RFS is NOT consumed.
+  bidOver <- submit providerA $ createCmd SealedBid with rfsId = "RFS-1"; provider = providerA; buyer = buyer; price = 60.0
+  submitMustFail buyer $ exerciseCmd rfs (Award with winningBid = bidOver, losingBids = [])
 
-  -- Assertions — the moat, stated as ledger facts.
-  assertMsg "Buyer must see all 3 bids"           (length buyerView == 3)
-  assertMsg "Provider A sees exactly 1 bid"       (length aView == 1)
-  assertMsg "Provider B sees exactly 1 bid"       (length bView == 1)
-  assertMsg "Provider C sees exactly 1 bid"       (length cView == 1)
-  assertMsg "Uninvolved party (Eve) sees 0 bids"  (length eveView == 0)
-  assertMsg "Provider A sees ONLY its own 31"     (prices aView == [31.0])
-  assertMsg "Provider B sees ONLY its own 42"     (prices bView == [42.0])
-  assertMsg "Provider C sees ONLY its own 28"     (prices cView == [28.0])
+  -- (4) Buyer awards the winner (C @ 28) atomically; all other bids are closed.
+  _settle <- submit buyer $ exerciseCmd rfs
+    (Award with winningBid = bidC, losingBids = [bidA, bidB, bidOver])
 
-  -- Print the visibility matrix.
-  debug "VISIBILITY MATRIX — bid prices each party can see:"
-  debug $ "  buyer     -> " <> show (sort (prices buyerView))
-  debug $ "  providerA -> " <> show (prices aView)
-  debug $ "  providerB -> " <> show (prices bView)
-  debug $ "  providerC -> " <> show (prices cView)
-  debug $ "  eve       -> " <> show (prices eveView)
-  debug "PROVED: each provider sees only its own sealed bid; only the buyer sees all."
+  -- (5,6) Settlement visibility.
+  buyerSettle <- query @Settlement buyer
+  cSettle <- query @Settlement providerC
+  aSettle <- query @Settlement providerA
+  bSettle <- query @Settlement providerB
+  eveSettle <- query @Settlement eve
+  assertMsg "buyer sees the settlement"            (length buyerSettle == 1)
+  assertMsg "winning provider C sees settlement"   (length cSettle == 1)
+  assertMsg "losing provider A sees NO settlement" (length aSettle == 0)
+  assertMsg "losing provider B sees NO settlement" (length bSettle == 0)
+  assertMsg "unrelated party sees NO settlement"   (length eveSettle == 0)
 
+  -- (7) Settlement price equals the selected bid price.
+  assertMsg "settlement price == 28" (map (\(_, s) -> s.price) buyerSettle == [28.0])
+
+  -- Atomicity: every sealed bid is closed and the RFS is consumed after award.
+  bidsAfter <- query @SealedBid buyer
+  rfsAfter  <- query @Rfs buyer
+  assertMsg "all sealed bids archived after award" (length bidsAfter == 0)
+  assertMsg "RFS consumed after award (no re-award)" (length rfsAfter == 0)
+
+  debug "PROVED: sealed-bid privacy + atomic award (losers archived, settlement created, RFS closed) in one Canton transaction."
   pure ()

@@ -80,21 +80,21 @@ export function LensView({ deal }: { deal: Deal }) {
 
           <Card
             title="Atomic Settlement"
-            subtitle="Payment and delivery settle in one Canton transaction — or not at all"
+            subtitle="Awarded by a Daml choice — losing bids closed and the settlement created in one Canton transaction"
           >
             <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
               <RevealField label="Status" field={deal.settlement.status} persona={persona} />
               <RevealField label="Network commitment" field={deal.settlement.commitment} persona={persona} mono />
               <RevealField label="Winner" field={deal.settlement.winner} persona={persona} />
               <RevealField label="Settled amount" field={deal.settlement.amount} persona={persona} mono format={usd} />
-              <RevealField label="Canton transaction" field={deal.settlement.txId} persona={persona} mono />
+              <RevealField label="Settlement contract" field={deal.settlement.txId} persona={persona} mono />
             </div>
-            {/* P3: settlement.txId becomes the real Daml tx hash — the "here's the actual atomic tx" demo beat. */}
+            {/* deal.settlement.txId is the real Canton Settlement contract id, created atomically by the Award choice. */}
           </Card>
         </div>
 
         <p className="mt-8 text-center text-[12px]" style={{ color: '#9CA3AF', fontFamily: MONO }}>
-          Seeded demo data · visibility is computed only from each field’s observer set · live Canton ledger at P3
+          Live on Canton · visibility enforced by the ledger · award executed by a Daml choice
         </p>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { negotiateCore, buildDealFromCore } from '@/app/lens/agents/negotiation';
 import { ledgerReachable } from '@/app/lens/ledger/client';
-import { writeNegotiation, type LedgerRefs } from '@/app/lens/ledger/write';
-import { readDealFromLedger } from '@/app/lens/ledger/read';
+import { settleNegotiation, type LedgerRefs } from '@/app/lens/ledger/write';
+import { buildLedgerDeal } from '@/app/lens/ledger/read';
 
 // Run one autonomous agent negotiation, persist it to the live Canton ledger
 // (when reachable), and return { transcript, deal, usedLLM, ledger }.
@@ -18,11 +18,13 @@ async function handle(opts: { intent?: string; description?: string; budget?: nu
 
   let ledger: LedgerRefs = { written: false };
   if (await ledgerReachable()) {
-    ledger = await writeNegotiation(core);
-    if (ledger.written && ledger.ledgerRfsId && ledger.parties) {
+    // Settle atomically on Canton (RFS → sealed bids → Award choice), then build
+    // the Lens deal from per-party ledger snapshots.
+    const { refs, snapshot } = await settleNegotiation(core);
+    ledger = refs;
+    if (refs.written && snapshot) {
       try {
-        // Read the deal back per-party so visibility is derived from the ledger.
-        deal = await readDealFromLedger(ledger.ledgerRfsId, ledger.parties, core);
+        deal = buildLedgerDeal(core, snapshot);
         dealSource = 'ledger';
       } catch {
         /* keep in-memory deal */

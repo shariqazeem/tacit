@@ -1,54 +1,46 @@
-// Tacit — read a deal back from the live Canton ledger, per party.
+// Tacit — assemble the Lens deal from per-party ledger snapshots (P3.2 + P2).
 //
-// The point of P3.2: the Lens stops ASSERTING who-sees-what and starts
-// REFLECTING the ledger. We query the SealedBids AS each persona and set each
-// price's `visibleTo` to exactly the set of personas whose query actually
-// returned that contract — so the privacy you see in the Lens is the ledger's,
-// not ours. The real Settlement contract id is surfaced as the "Canton
-// transaction".
+// The Lens does not ASSERT who-sees-what; it REFLECTS the ledger. `write.ts`
+// captured, per party, exactly which sealed bids each party could query (before
+// the atomic award) and which settlement each can see (after). Here we turn
+// those snapshots into the Field-wrapped Deal: each price's `visibleTo` is the
+// set of personas whose query actually returned it, and the settlement carries
+// the real Canton contract id.
 //
 // Participant-visible metadata (RFS text, provider labels, timestamps) and the
-// public-framing fields (existence/status/commitment) are kept from the
-// negotiation core — "public" is not a ledger party, so those aren't queries.
+// public-framing fields come from the negotiation core — "public" is not a
+// ledger party, so those are not queries.
 
 import { Deal, Bid, Persona } from '../types';
-import { queryAs, T } from './client';
 import type { NegotiationCore } from '../agents/negotiation';
+import type { LedgerSnapshot } from './write';
 
 const PARTICIPANTS: Persona[] = ['buyer', 'providerA', 'providerB', 'providerC'];
 
-export async function readDealFromLedger(
-  rfsId: string,
-  parties: Record<string, string>,
-  core: NegotiationCore,
-): Promise<Deal> {
+export function buildLedgerDeal(core: NegotiationCore, snap: LedgerSnapshot): Deal {
   const reverse: Record<string, Persona> = {};
-  for (const p of PARTICIPANTS) reverse[parties[p]] = p;
+  for (const p of PARTICIPANTS) reverse[snap.parties[p]] = p;
 
-  // Who can actually see each SealedBid contract? (ledger-enforced)
+  // Pre-award bid snapshot: who saw each bid contract, and its price.
   const seenBy: Record<string, Set<Persona>> = {};
   const bidByProvider: Record<string, { cid: string; price: number }> = {};
   for (const persona of PARTICIPANTS) {
-    const rows = await queryAs(parties[persona], [T.SealedBid], { rfsId });
-    for (const c of rows) {
-      (seenBy[c.contractId] ||= new Set()).add(persona);
-      const prov = reverse[c.payload.provider];
-      if (prov) bidByProvider[prov] = { cid: c.contractId, price: Number(c.payload.price) };
+    for (const v of snap.bidViews[persona] || []) {
+      (seenBy[v.cid] ||= new Set()).add(persona);
+      const prov = reverse[v.provider];
+      if (prov) bidByProvider[prov] = { cid: v.cid, price: v.price };
     }
   }
 
-  // Who can see the Settlement, and its real contract id?
+  // Post-award settlement snapshot.
   const settleSeen = new Set<Persona>();
   let settlePrice: number | null = null;
   let settleProvider: Persona | null = null;
-  let settleCid = '';
   for (const persona of PARTICIPANTS) {
-    const rows = await queryAs(parties[persona], [T.Settlement], { rfsId });
-    for (const c of rows) {
+    for (const v of snap.settleViews[persona] || []) {
       settleSeen.add(persona);
-      settlePrice = Number(c.payload.price);
-      settleProvider = reverse[c.payload.provider] ?? settleProvider;
-      settleCid = c.contractId;
+      settlePrice = v.price;
+      settleProvider = reverse[v.provider] ?? settleProvider;
     }
   }
 
@@ -68,10 +60,11 @@ export async function readDealFromLedger(
   const winnerPersona: Persona = settleProvider ?? core.winner.id;
   const winnerLabel = core.bids.find((b) => b.id === winnerPersona)?.label ?? core.winner.label;
   const winnerObservers: Persona[] = settleSeen.size ? ([...settleSeen].sort() as Persona[]) : ['buyer', winnerPersona];
-  const txDisplay = settleCid ? `${settleCid.slice(0, 10)}…${settleCid.slice(-6)}` : '—';
+  const cid = snap.settlementCid;
+  const txDisplay = cid ? `${cid.slice(0, 10)}…${cid.slice(-6)}` : '—';
 
   return {
-    id: 'TACIT-DEAL-' + rfsId.replace(/^RFS-/, '').toUpperCase().slice(0, 6),
+    id: 'TACIT-DEAL-' + snap.rfsId.replace(/^RFS-/, '').toUpperCase().slice(0, 6),
     existence: { value: 'A confidential deal exists on Tacit', visibleTo: ['public', ...PARTICIPANTS] },
     rfs: {
       title: { value: core.rfs.title, visibleTo: PARTICIPANTS },
@@ -81,7 +74,9 @@ export async function readDealFromLedger(
     },
     bids: dealBids,
     settlement: {
-      status: { value: 'Settled atomically', visibleTo: ['public', ...PARTICIPANTS] },
+      // Honest: the award executed atomically on Canton (losers archived,
+      // settlement created, RFS closed in one transaction). No token movement yet.
+      status: { value: 'Awarded on Canton', visibleTo: ['public', ...PARTICIPANTS] },
       winner: { value: winnerLabel, visibleTo: winnerObservers },
       amount: { value: settlePrice ?? core.winner.price, visibleTo: winnerObservers },
       txId: { value: txDisplay, visibleTo: winnerObservers }, // ← real Canton Settlement contract id

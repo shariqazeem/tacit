@@ -16,7 +16,7 @@ const LEDGER_ID = process.env.DAML_LEDGER_ID || 'sandbox';
 const APP_ID = process.env.DAML_APPLICATION_ID || 'tacit';
 const SECRET = process.env.DAML_TOKEN_SECRET || 'tacit-dev-secret';
 export const PACKAGE_ID =
-  process.env.TACIT_PACKAGE_ID || 'aeee7b213544035aff90257d2e4e553223104281ebc9e55d37f0af57c4aa0fdf';
+  process.env.TACIT_PACKAGE_ID || '66e7ac22bcf8dce96c8449b584b85ba19e4dd03c48211b1d5990e0ceb3af5e04';
 
 export const T = {
   Rfs: `${PACKAGE_ID}:Tacit.Sealed:Rfs`,
@@ -91,4 +91,20 @@ export async function create(templateId: string, payload: Record<string, unknown
 export async function queryAs(party: string, templateIds: string[], query?: Record<string, unknown>): Promise<any[]> {
   const r = await call('/v1/query', partyToken([party]), query ? { templateIds, query } : { templateIds });
   return r.json?.result || [];
+}
+
+/**
+ * Exercise a choice on a contract, submitting as `actAs`. Returns the choice's
+ * result (e.g. the ContractId of a contract the choice created).
+ */
+export async function exercise(
+  templateId: string,
+  contractId: string,
+  choice: string,
+  argument: Record<string, unknown>,
+  actAs: string[],
+): Promise<any> {
+  const r = await call('/v1/exercise', partyToken(actAs), { templateId, contractId, choice, argument });
+  if (r.http !== 200 || r.json?.status !== 200) throw new Error('exercise failed: ' + JSON.stringify(r.json).slice(0, 300));
+  return r.json.result.exerciseResult;
 }

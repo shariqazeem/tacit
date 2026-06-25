@@ -1,30 +1,56 @@
--- Tacit — sealed-bid privacy model, in real Daml.
+-- Tacit — sealed-bid privacy model + atomic award, in real Daml.
 --
--- The privacy property is NOT enforced by application code — it is enforced by
--- the ledger from the signatory/observer declarations below. A party can only
--- ever see a contract on which it is a stakeholder (signatory or observer).
--- That is what Test.daml proves cryptographically.
+-- Privacy is NOT enforced by application code — it is enforced by the ledger
+-- from the signatory/observer declarations below. A party can only ever see a
+-- contract on which it is a stakeholder. Test.daml proves this.
+--
+-- P2 adds an ATOMIC award: the buyer awards one bid through a single Daml
+-- transaction that archives the losing bids, creates the Settlement, and closes
+-- the auction — all-or-nothing, guaranteed by the ledger.
 
 module Tacit.Sealed where
 
--- A request for service, posted by the buyer agent.
+import DA.Foldable (mapA_)
+
+-- A request for service, posted by the buyer. `rfsId` ties the request to its
+-- sealed bids so the Award choice can validate that a bid belongs to it.
 template Rfs
   with
+    rfsId : Text
     buyer : Party
     description : Text
     maxBudget : Decimal
   where
     signatory buyer
 
--- A sealed bid.
---
--- signatory provider  -> the bidder is bound to its own bid.
--- observer  buyer     -> ONLY the buyer may also see it.
--- Competing providers are deliberately NOT observers, so the ledger hides the
--- price from them. This single `observer buyer` line IS the privacy property.
---
--- G6 (portable reputation): a `reputation : ReputationSnapshot` field can be
---   added here later without redesign — additive only.
+    -- ATOMIC AWARD (P2). In ONE Canton transaction the buyer:
+    --   * validates the winning bid (right RFS, right buyer, within budget),
+    --   * Rejects every losing bid (each archived),
+    --   * Accepts the winning bid -> the Settlement is created,
+    --   * consumes this Rfs -> the auction can never be awarded twice.
+    -- Either all of it commits or none of it does. That atomicity is the
+    -- ledger's guarantee, not application code.
+    --
+    -- A buyer-controlled choice may close provider-signed bids because the
+    -- provider pre-authorized the Accept/Reject choices by creating the bid.
+    -- Inside Accept, the body additionally holds the bid's signatory (provider)
+    -- authority, which is what lets it create the dual-signatory Settlement.
+    choice Award : ContractId Settlement
+      with
+        winningBid : ContractId SealedBid
+        losingBids : [ContractId SealedBid]
+      controller buyer
+      do
+        won <- fetch winningBid
+        assertMsg "winning bid belongs to this RFS" (won.rfsId == rfsId)
+        assertMsg "winning bid is for this buyer"   (won.buyer == buyer)
+        assertMsg "winning bid is within budget"    (won.price <= maxBudget)
+        mapA_ (rejectLosing rfsId) losingBids
+        exercise winningBid Accept
+
+-- A sealed bid. signatory provider, observer buyer (and ONLY buyer): the ledger
+-- hides each price from competing providers. The buyer-controlled choices give
+-- the buyer authority to close the bid at award time.
 template SealedBid
   with
     rfsId : Text
@@ -34,14 +60,27 @@ template SealedBid
   where
     signatory provider
     observer buyer
-    -- NOTE: cross-participant-node enforcement (bids living on different
-    -- validators) is proven in P1b on LocalNet. Here we prove the
-    -- contract-level observer model that the whole design rests on.
 
--- Settlement: declared now, exercised in P2.
--- signatory buyer + winning provider => atomic, dual-authorized award.
--- G1 (mainnet) + G6: a settlement event / reputation update can be grafted
---   on here later without reshaping the templates above.
+    -- Buyer accepts this (winning) bid. Consuming: the bid is closed. Body runs
+    -- with provider (signatory) + buyer (controller) authority -> can create the
+    -- dual-signatory Settlement.
+    choice Accept : ContractId Settlement
+      controller buyer
+      do
+        create Settlement with
+          buyer = buyer
+          provider = provider
+          rfsId = rfsId
+          price = price
+
+    -- Buyer rejects this (losing) bid. Consuming: the bid is archived.
+    choice Reject : ()
+      controller buyer
+      do
+        pure ()
+
+-- The on-ledger record of an awarded deal: buyer + winning provider co-sign.
+-- Created atomically inside SealedBid.Accept (never as a standalone create).
 template Settlement
   with
     buyer : Party
@@ -50,3 +89,12 @@ template Settlement
     price : Decimal
   where
     signatory buyer, provider
+
+-- Helper: archive one losing bid (must belong to the same RFS). Runs with the
+-- authority of the Award choice body that calls it (buyer), which is what
+-- Reject's controller requires.
+rejectLosing : Text -> ContractId SealedBid -> Update ()
+rejectLosing rfsId cid = do
+  lose <- fetch cid
+  assertMsg "losing bid belongs to this RFS" (lose.rfsId == rfsId)
+  exercise cid Reject
