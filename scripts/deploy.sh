@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 # Configuration
 DOMAIN="parallaxpay.online"
 EMAIL="your-email@example.com"  # Change this to your email
-APP_DIR="/home/ubuntu/parallaxpay_x402"
+APP_DIR="/home/ubuntu/tacit"
 
 echo -e "${BLUE}📋 Pre-deployment Checklist${NC}"
 echo "1. Domain DNS configured? (A record pointing to this server)"

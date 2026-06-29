@@ -191,7 +191,7 @@ We are porting **ParallaxPay**, an autonomous AI-agent marketplace with on-chain
 ---
 
 ## 10. LINKS & ASSETS
-- **Prior art / port source (old repo):** https://github.com/shariqazeem/parallaxpay_x402
+- **Prior art / port source (old repo):** https://github.com/shariqazeem/tacit
 - **Old live product:** https://parallaxpay.online
 - **Old demo video:** https://youtu.be/6KYn7JHeizU · https://x.com/shariqshkt/status/1988529505179451807
 - **Canton quickstart:** https://github.com/digital-asset/cn-quickstart

@@ -152,7 +152,7 @@ try {
 ### Step 1: Pull Latest Code
 
 ```bash
-cd parallaxpay_x402
+cd tacit
 git pull origin claude/x402-parallax-hackathon-01FjmyFBzkFTsCLiqDRu3yrj
 ```
 

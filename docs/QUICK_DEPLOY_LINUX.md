@@ -63,7 +63,7 @@ git push origin main
 SSH into your VM and pull the changes:
 
 ```bash
-cd parallaxpay_x402
+cd tacit
 git pull origin main
 ```
 
@@ -326,7 +326,7 @@ Once deployed:
 **View logs:** `pm2 logs parallaxpay`
 **Check status:** `pm2 status`
 
-**Environment file:** `/home/your-user/parallaxpay_x402/.env`
+**Environment file:** `/home/your-user/tacit/.env`
 **Logs location:** `~/.pm2/logs/`
 
 ## 🏆 Success!

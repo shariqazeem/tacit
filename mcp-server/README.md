@@ -42,7 +42,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   "mcpServers": {
     "parallaxpay": {
       "command": "node",
-      "args": ["/path/to/parallaxpay_x402/mcp-server/dist/index.js"],
+      "args": ["/path/to/tacit/mcp-server/dist/index.js"],
       "env": {
         "SOLANA_PRIVATE_KEY": "your-private-key",
         "NEXT_PUBLIC_BASE_URL": "http://localhost:3000"

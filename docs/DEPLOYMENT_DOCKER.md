@@ -57,8 +57,8 @@ sudo ufw reload
 ```bash
 # Clone your repository
 cd ~
-git clone https://github.com/shariqazeem/parallaxpay_x402.git
-cd parallaxpay_x402
+git clone https://github.com/shariqazeem/tacit.git
+cd tacit
 
 # Checkout the deployment branch
 git checkout claude/oracle-agent-deployment-011CV2j64FAb1DxTLJJx72pn

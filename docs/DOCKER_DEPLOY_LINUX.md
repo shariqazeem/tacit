@@ -18,7 +18,7 @@ This guide will help you deploy ParallaxPay on Linux (aarch64/x86_64) using Dock
 ### 1. Pull Latest Code
 
 ```bash
-cd parallaxpay_x402
+cd tacit
 git pull origin main
 ```
 
@@ -385,7 +385,7 @@ services:
 
 ```bash
 # Pull latest
-cd parallaxpay_x402
+cd tacit
 git pull origin main
 
 # Rebuild and restart

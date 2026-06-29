@@ -277,7 +277,7 @@ def create_closing_slide(prs):
     # Call to action
     cta = slide.shapes.add_textbox(Inches(0.5), Inches(6), Inches(9), Inches(0.8))
     text_frame = cta.text_frame
-    text_frame.text = "github.com/shariqazeem/parallaxpay_x402"
+    text_frame.text = "github.com/shariqazeem/tacit"
 
     p = text_frame.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER

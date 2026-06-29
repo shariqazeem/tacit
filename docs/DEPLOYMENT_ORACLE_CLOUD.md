@@ -141,8 +141,8 @@
 1. **Clone Repository**
    ```bash
    cd ~
-   git clone https://github.com/shariqazeem/parallaxpay_x402.git
-   cd parallaxpay_x402
+   git clone https://github.com/shariqazeem/tacit.git
+   cd tacit
    ```
 
 2. **Install Dependencies**
@@ -237,7 +237,7 @@
 
 1. **Start App with PM2**
    ```bash
-   cd ~/parallaxpay_x402
+   cd ~/tacit
    pm2 start npm --name "parallaxpay" -- start
    ```
 
@@ -318,7 +318,7 @@ sudo tail -f /var/log/nginx/error.log
 ### **Restart Application**
 ```bash
 # After making changes
-cd ~/parallaxpay_x402
+cd ~/tacit
 git pull  # Pull latest changes
 npm install  # Install new dependencies
 npm run build  # Rebuild
@@ -452,7 +452,7 @@ sudo systemctl restart sshd
 - [ ] README updated with deployment URL
 - [ ] Submission form filled with:
   - [ ] Deployment URL: https://yourdomain.com
-  - [ ] GitHub repo: https://github.com/shariqazeem/parallaxpay_x402
+  - [ ] GitHub repo: https://github.com/shariqazeem/tacit
   - [ ] Demo video: [YouTube/Loom link]
   - [ ] Track: Parallax Eco Track
 
@@ -470,7 +470,7 @@ sudo systemctl restart sshd
 **Server Access:**
 ```bash
 ssh ubuntu@YOUR_PUBLIC_IP
-cd ~/parallaxpay_x402
+cd ~/tacit
 pm2 logs parallaxpay
 ```
 
@@ -499,7 +499,7 @@ pm2 logs parallaxpay
 
 1. **Deployment URL:** https://yourdomain.com
 2. **Demo video with live site:** [Record using actual deployment]
-3. **GitHub repo:** https://github.com/shariqazeem/parallaxpay_x402
+3. **GitHub repo:** https://github.com/shariqazeem/tacit
 
 **Judges will appreciate:**
 - ✅ Live, working deployment (not just localhost)

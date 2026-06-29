@@ -15,7 +15,7 @@ parallax run -m Qwen/Qwen3-0.6B -n 1 --host 0.0.0.0
 
 ### Terminal 2: ParallaxPay
 ```bash
-cd ~/parallaxpay_x402
+cd ~/tacit
 npm run dev
 ```
 
