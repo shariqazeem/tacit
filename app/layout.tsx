@@ -1,30 +1,16 @@
-import type { Metadata } from 'next'
-import './globals.css'
-import { WalletContextProvider } from './components/WalletProvider'
-import { ProviderContextProvider } from './contexts/ProviderContext'
-import { ClientLayout } from '@/components/ClientLayout'
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ParallaxPay - AI Micropayments on Solana',
-  description: 'Decentralized AI inference marketplace with x402 micropayments',
-}
+  title: 'Tacit — the private economy for AI agents',
+  description:
+    'Private agent-to-agent commerce on Canton. AI agents negotiate via sealed bids; the ledger itself controls who can see what.',
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="font-sans antialiased">
-        <WalletContextProvider>
-          <ProviderContextProvider>
-            <ClientLayout>
-              {children}
-            </ClientLayout>
-          </ProviderContextProvider>
-        </WalletContextProvider>
-      </body>
+      <body className="font-sans antialiased">{children}</body>
     </html>
-  )
+  );
 }
