@@ -9,7 +9,7 @@
 // the three separate runner processes do. Idempotent on jobId via ledger state.
 import crypto from 'crypto';
 import {
-  create, exercise, queryAs, ensureParty, partyHint, T, LEDGER_MODE_ACTIVE, ledgerReachable,
+  create, exercise, queryAs, ensureParty, pinnedParty, partyHint, T, LEDGER_MODE_ACTIVE, ledgerReachable,
 } from './client';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
@@ -88,7 +88,11 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
   const bidTimeout = opts.bidTimeoutMs ?? 45_000;
   const delivTimeout = opts.deliveryTimeoutMs ?? 45_000;
 
-  const buyer = await ensureParty(params.buyerName ? partyHint(params.buyerName) : 'Buyer');
+  // The buyer acts as a pinned party. The shared devnet validator's party
+  // *listing* hangs, so a non-pinned buyerName can't be resolved by allocation
+  // reliably — prefer the pinned identity (buyerName stays a display label).
+  const buyerHint = params.buyerName ? partyHint(params.buyerName) : 'Buyer';
+  const buyer = pinnedParty(buyerHint) || pinnedParty('Buyer') || (await ensureParty(buyerHint));
   const pA = await ensureParty('ProviderA');
   const pB = await ensureParty('ProviderB');
   const pC = await ensureParty('ProviderC');
@@ -106,6 +110,9 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
     assignmentContractId: string, deliveryContractId: string, receiptContractId: string,
     reportJson: string, reportSha256: string, reportByteLen: number,
     bids: { provider: string; providerLabel: string; contractId: string; price: number }[],
+    // Delivery visibility must be snapshotted BEFORE Accept archives the
+    // PrivateDelivery — the caller passes it in.
+    delVis: { buyer: boolean; auditor: boolean; loser: boolean },
   ): Promise<WorkResult> => {
     const buyerVerified = verifyDelivery(reportJson, reportSha256, reportByteLen);
     const recB = await queryAs(buyer, [TW.DeliveryReceipt], { jobId: params.jobId });
@@ -113,9 +120,6 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
     const recAud = await queryAs(auditor, [TW.DeliveryReceipt], { jobId: params.jobId });
     const loser = invited.find((p) => p !== winnerParty)!;
     const recLoser = await queryAs(loser, [TW.DeliveryReceipt], { jobId: params.jobId });
-    const delB = await queryAs(buyer, [TW.PrivateDelivery], { jobId: params.jobId });
-    const delAud = await queryAs(auditor, [TW.PrivateDelivery], { jobId: params.jobId });
-    const delLoser = await queryAs(loser, [TW.PrivateDelivery], { jobId: params.jobId });
     return {
       ok: true, mode: LEDGER_MODE_ACTIVE, jobId: params.jobId, rfsId, workPackage: WORK_PKG,
       serviceType: params.serviceType, input: { url },
@@ -126,27 +130,36 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
       report: safeParse(reportJson), reportSha256, reportByteLen, buyerVerified,
       visibility: {
         receipt: { buyer: recB.length > 0, winner: recW.length > 0, auditor: recAud.length > 0, loser: recLoser.length > 0 },
-        privateDelivery: { buyer: delB.length > 0, auditor: delAud.length > 0, loser: delLoser.length > 0 },
+        privateDelivery: delVis,
       },
       resumed,
     };
   };
 
-  // ── 1) OPEN (idempotent) ────────────────────────────────────────────────────
-  let awr = (await queryAs(buyer, [TW.ActiveWorkRequest], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId);
-  if (!awr) {
-    const draftCid = await create(TW.RequestDraft, {
-      jobId: params.jobId, rfsId, buyer, invitedProviders: invited, serviceType: params.serviceType,
-      serviceInput, title: 'Website due-diligence audit', description: `site_audit of ${url}`,
-      maxBudget: String(params.maxBudget), auditor,
-    }, [buyer]);
-    await exercise(TW.RequestDraft, draftCid, 'Open', {}, [buyer]);
-    awr = (await queryAs(buyer, [TW.ActiveWorkRequest], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null as any;
-    if (!awr) throw new Error('Open did not produce an ActiveWorkRequest');
+  // Detect an existing Assignment up front: Assign CONSUMES the ActiveWorkRequest,
+  // so on a replay we must NOT re-Open a duplicate request — we resume from here.
+  const existingAssign = (await queryAs(buyer, [TW.Assignment], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null;
+
+  // ── 1) OPEN (idempotent; skipped once the work is already Assigned) ──────────
+  let awrCid = '';
+  if (!existingAssign) {
+    let awr = (await queryAs(buyer, [TW.ActiveWorkRequest], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null;
+    if (!awr) {
+      const draftCid = await create(TW.RequestDraft, {
+        jobId: params.jobId, rfsId, buyer, invitedProviders: invited, serviceType: params.serviceType,
+        serviceInput, title: 'Website due-diligence audit', description: `site_audit of ${url}`,
+        maxBudget: String(params.maxBudget), auditor,
+      }, [buyer]);
+      await exercise(TW.RequestDraft, draftCid, 'Open', {}, [buyer]);
+      awr = (await queryAs(buyer, [TW.ActiveWorkRequest], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null;
+      if (!awr) throw new Error('Open did not produce an ActiveWorkRequest');
+    } else {
+      resumed = true;
+    }
+    awrCid = awr.contractId;
   } else {
     resumed = true;
   }
-  const awrCid = awr.contractId;
 
   // ── 2) SETTLEMENT: wait for 3 runner bids, verify, award+prepay (or resume) ──
   let settleRow = (await queryAs(buyer, [T.Settlement], { rfsId }))[0] || null;
@@ -177,14 +190,13 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
   const amount = Number(settleP.price);
   const paymentIou = String(settleP.paidIou || '');
 
-  // ── 3) ASSIGN (idempotent) ──────────────────────────────────────────────────
-  let assign = (await queryAs(buyer, [TW.Assignment], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId);
+  // ── 3) ASSIGN (idempotent; reuse the Assignment detected up front) ──────────
   let assignmentCid: string;
-  if (!assign) {
-    assignmentCid = await exercise(TW.ActiveWorkRequest, awrCid, 'Assign', { settlementCid }, [buyer]);
-  } else {
-    assignmentCid = assign.contractId;
+  if (existingAssign) {
+    assignmentCid = existingAssign.contractId;
     resumed = true;
+  } else {
+    assignmentCid = await exercise(TW.ActiveWorkRequest, awrCid, 'Assign', { settlementCid }, [buyer]);
   }
 
   // ── 4) wait for the winner's PrivateDelivery, verify OFF-LEDGER, accept ──────
@@ -208,6 +220,16 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
   }
 
   let deliveryCid = delivery?.contractId || '';
+
+  // Snapshot PrivateDelivery visibility per persona BEFORE Accept consumes it —
+  // the buyer (observer) sees it; the auditor and losing providers must NOT.
+  const loserParty = invited.find((p) => p !== winnerParty)!;
+  const delVis = {
+    buyer: (await queryAs(buyer, [TW.PrivateDelivery], { jobId: params.jobId })).some((r) => r.payload.rfsId === rfsId),
+    auditor: (await queryAs(auditor, [TW.PrivateDelivery], { jobId: params.jobId })).some((r) => r.payload.rfsId === rfsId),
+    loser: (await queryAs(loserParty, [TW.PrivateDelivery], { jobId: params.jobId })).some((r) => r.payload.rfsId === rfsId),
+  };
+
   if (!receipt) {
     const check = verifyDelivery(reportJson, reportSha, reportLen);
     if (!check.ok) throw new Error(`delivery hash/length verification FAILED (computed ${check.computedSha.slice(0, 12)}… vs committed ${reportSha.slice(0, 12)}…) — refusing to accept`);
@@ -217,7 +239,7 @@ export async function procureWork(params: WorkParams, opts: { bidTimeoutMs?: num
     resumed = true;
   }
 
-  return finish(winnerParty, settlementCid, paymentIou, amount, assignmentCid, deliveryCid, receipt!.contractId, reportJson, reportSha, reportLen, collectedBids);
+  return finish(winnerParty, settlementCid, paymentIou, amount, assignmentCid, deliveryCid, receipt!.contractId, reportJson, reportSha, reportLen, collectedBids, delVis);
 }
 
 function safeParse(s: string): unknown {

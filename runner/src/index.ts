@@ -74,7 +74,8 @@ async function tickDeliveries(): Promise<void> {
     const { canonical } = await siteAudit({ url: input.url });
     const delivCid = await canton.exercise(
       T_ASSIGN, contractId, 'SubmitDelivery',
-      { reportJson: canonical.json, sha256: canonical.sha256, mediaType: 'application/json', byteLen: canonical.byteLen },
+      // byteLen is a Daml Int → the JSON Ledger API requires Int64 as a string.
+      { reportJson: canonical.json, sha256: canonical.sha256, mediaType: 'application/json', byteLen: String(canonical.byteLen) },
       [cfg.party],
     );
     state.deliveries[jobId] = String(delivCid);
