@@ -1,0 +1,170 @@
+-- Tacit Work — the fulfillment lifecycle, additive over the frozen `tacit` package.
+--
+-- Frozen package (unchanged): Rfs · SealedBid · Settlement · Iou — award + prepay.
+-- This package adds, AROUND them, a real service lifecycle:
+--
+--   RequestDraft --Open--> (frozen Rfs + ActiveWorkRequest)
+--   ActiveWorkRequest --Assign(Settlement)--> Assignment        (after buyer awards+prepays via frozen Rfs.Award)
+--   Assignment --SubmitDelivery--> PrivateDelivery              (only the winning provider)
+--   PrivateDelivery --Accept--> DeliveryReceipt                 (buyer, AFTER off-ledger SHA-256 verification)
+--
+-- Privacy is ledger-enforced exactly like the frozen model:
+--   * invited providers observe ActiveWorkRequest (they discover work FROM Canton, not "by convention")
+--   * only the winner observes its Assignment; losers never do
+--   * PrivateDelivery (the report bytes) is signatory provider, observer buyer ONLY — never the auditor, never losers
+--   * DeliveryReceipt (commitment only, NO report body) is visible to buyer + winner + auditor
+--
+-- IMPORTANT: Daml does NOT prove that `sha256` matches `reportJson`. The BUYER
+-- APPLICATION recomputes SHA-256 over the exact canonical bytes and only then
+-- exercises Accept. The receipt proves the buyer accepted the committed bytes —
+-- not that the report is objectively correct.
+
+module TacitWork where
+
+import DA.Optional (optionalToList, isSome)
+import Tacit.Sealed (Rfs(..), Settlement)
+
+-- A buyer's private, canonical work request before it is opened on the ledger.
+template RequestDraft
+  with
+    jobId : Text                 -- idempotency key
+    rfsId : Text                 -- ties the work request to its frozen Rfs + sealed bids
+    buyer : Party
+    invitedProviders : [Party]
+    serviceType : Text           -- e.g. "site_audit"
+    serviceInput : Text          -- canonical JSON input (e.g. {"url":"https://example.com"})
+    title : Text
+    description : Text
+    maxBudget : Decimal
+    auditor : Optional Party
+  where
+    signatory buyer
+
+    -- Atomically create the frozen Rfs AND the ActiveWorkRequest with the SAME
+    -- immutable identity/input, so request and RFS can never disagree.
+    choice Open : (ContractId Rfs, ContractId ActiveWorkRequest)
+      controller buyer
+      do
+        rfsCid <- create Rfs with
+          rfsId
+          buyer
+          description
+          maxBudget
+          title
+          category = serviceType
+          auditor
+        awrCid <- create ActiveWorkRequest with
+          jobId; rfsId; buyer; invitedProviders; serviceType
+          serviceInput; title; maxBudget; auditor
+        pure (rfsCid, awrCid)
+
+-- Discoverable by the invited providers THROUGH Canton (they are observers).
+template ActiveWorkRequest
+  with
+    jobId : Text
+    rfsId : Text
+    buyer : Party
+    invitedProviders : [Party]
+    serviceType : Text
+    serviceInput : Text
+    title : Text
+    maxBudget : Decimal
+    auditor : Optional Party
+  where
+    signatory buyer
+    observer invitedProviders, optionalToList auditor
+
+    -- Bind the work to the frozen Settlement produced by Rfs.Award. Validates the
+    -- settlement agrees with this request, then names the actual winner.
+    choice Assign : ContractId Assignment
+      with
+        settlementCid : ContractId Settlement
+      controller buyer
+      do
+        s <- fetch settlementCid
+        assertMsg "settlement buyer must match the request buyer" (s.buyer == buyer)
+        assertMsg "settlement rfsId must match the request"        (s.rfsId == rfsId)
+        assertMsg "winner must be one of the invited providers"    (s.provider `elem` invitedProviders)
+        assertMsg "settled price must be within the request budget" (s.price <= maxBudget)
+        assertMsg "settlement must carry a payment"                (isSome s.paid)
+        create Assignment with
+          jobId; rfsId; buyer
+          provider = s.provider
+          serviceType; serviceInput; settlementCid; auditor
+
+-- Only the winning provider can act on this; losers never observe it.
+template Assignment
+  with
+    jobId : Text
+    rfsId : Text
+    buyer : Party
+    provider : Party
+    serviceType : Text
+    serviceInput : Text
+    settlementCid : ContractId Settlement
+    auditor : Optional Party
+  where
+    signatory buyer
+    observer provider, optionalToList auditor
+
+    -- The winner performs the real work off-ledger, then delivers privately.
+    choice SubmitDelivery : ContractId PrivateDelivery
+      with
+        reportJson : Text          -- the exact canonical report bytes (UTF-8)
+        sha256 : Text              -- provider's commitment over reportJson
+        mediaType : Text
+        byteLen : Int
+      controller provider
+      do
+        create PrivateDelivery with
+          jobId; rfsId; settlementCid; buyer; provider; serviceType
+          reportJson; sha256; mediaType; byteLen; auditor
+
+-- The report bytes. Visible to buyer + winner ONLY (never auditor, never losers).
+template PrivateDelivery
+  with
+    jobId : Text
+    rfsId : Text
+    settlementCid : ContractId Settlement
+    buyer : Party
+    provider : Party
+    serviceType : Text
+    reportJson : Text
+    sha256 : Text
+    mediaType : Text
+    byteLen : Int
+    auditor : Optional Party        -- carried through for the receipt; NOT an observer here
+  where
+    signatory provider
+    observer buyer
+
+    -- Buyer accepts AFTER recomputing SHA-256 off-ledger (the app must verify;
+    -- the ledger cannot prove the hash matches the bytes).
+    choice Accept : ContractId DeliveryReceipt
+      with
+        acceptedAt : Text
+      controller buyer
+      do
+        create DeliveryReceipt with
+          jobId; rfsId; settlementCid; buyer; provider; serviceType
+          sha256; byteLen; acceptedAt
+          status = "accepted"
+          auditor
+
+-- The commitment + acceptance record. NO report body. Buyer + winner + auditor.
+template DeliveryReceipt
+  with
+    jobId : Text
+    rfsId : Text
+    settlementCid : ContractId Settlement
+    buyer : Party
+    provider : Party
+    serviceType : Text
+    sha256 : Text
+    byteLen : Int
+    acceptedAt : Text
+    status : Text
+    auditor : Optional Party
+  where
+    signatory buyer, provider
+    observer optionalToList auditor

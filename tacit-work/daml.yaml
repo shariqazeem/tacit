@@ -1,0 +1,11 @@
+sdk-version: 3.4.11
+name: tacit-work
+version: 0.1.0
+source: .
+# Additive work lifecycle built AROUND the frozen `tacit` package (Rfs/SealedBid/
+# Settlement/Iou), referenced as a data-dependency so its package id never changes.
+dependencies:
+  - daml-prim
+  - daml-stdlib
+data-dependencies:
+  - ../daml3/.daml/dist/tacit-0.1.0.dar

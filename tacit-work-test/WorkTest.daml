@@ -1,0 +1,166 @@
+-- Tacit Work — ledger-enforced proof of the fulfillment lifecycle.
+-- Frozen `tacit` package imported QUALIFIED (S.*) to disambiguate shared field
+-- names. `query @T party` returns ONLY contracts `party` is a stakeholder of.
+
+module WorkTest where
+
+import Daml.Script
+import TacitWork
+import qualified Tacit.Sealed as S
+
+canonReport : Text
+canonReport = "{\"score\":90,\"url\":\"https://example.com\"}"
+
+data Parties = Parties with buyer : Party; pA : Party; pB : Party; pC : Party; auditor : Party; eve : Party
+
+setup : Script Parties
+setup = do
+  buyer <- allocateParty "Buyer"
+  pA <- allocateParty "ProviderA"
+  pB <- allocateParty "ProviderB"
+  pC <- allocateParty "ProviderC"
+  auditor <- allocateParty "Auditor"
+  eve <- allocateParty "Eve"
+  pure Parties with buyer; pA; pB; pC; auditor; eve
+
+-- Open a request, collect three sealed bids, award+prepay the lowest via the
+-- FROZEN Rfs.Award, and assign the work. Winner is pC (60).
+openBidAward : Parties -> Text -> Script (ContractId ActiveWorkRequest, ContractId Assignment)
+openBidAward p rid = do
+  draft <- submit p.buyer $ createCmd RequestDraft with
+    jobId = "job-" <> rid; rfsId = rid; buyer = p.buyer; invitedProviders = [p.pA, p.pB, p.pC]
+    serviceType = "site_audit"; serviceInput = "{\"url\":\"https://example.com\"}"
+    title = "Website due-diligence audit"; description = "Audit example.com"; maxBudget = 100.0
+    auditor = Some p.auditor
+  (rfsCid, awrCid) <- submit p.buyer $ exerciseCmd draft Open
+  bidA <- submit p.pA $ createCmd S.SealedBid with rfsId = rid; provider = p.pA; buyer = p.buyer; price = 80.0
+  bidB <- submit p.pB $ createCmd S.SealedBid with rfsId = rid; provider = p.pB; buyer = p.buyer; price = 95.0
+  bidC <- submit p.pC $ createCmd S.SealedBid with rfsId = rid; provider = p.pC; buyer = p.buyer; price = 60.0
+  iou <- submit p.buyer $ createCmd S.Iou with issuer = p.buyer; owner = p.buyer; amount = 60.0; currency = "USD.demo"
+  settleCid <- submit p.buyer $ exerciseCmd rfsCid S.Award with winningBid = bidC; losingBids = [bidA, bidB]; paymentCid = iou
+  assignCid <- submit p.buyer $ exerciseCmd awrCid Assign with settlementCid = settleCid
+  pure (awrCid, assignCid)
+
+-- Full happy path + visibility + duplicate-accept.
+workHappyPath : Script ()
+workHappyPath = do
+  p <- setup
+  draft <- submit p.buyer $ createCmd RequestDraft with
+    jobId = "job-RFS-W1"; rfsId = "RFS-W1"; buyer = p.buyer; invitedProviders = [p.pA, p.pB, p.pC]
+    serviceType = "site_audit"; serviceInput = "{\"url\":\"https://example.com\"}"
+    title = "Website due-diligence audit"; description = "Audit example.com"; maxBudget = 100.0
+    auditor = Some p.auditor
+  (rfsCid, awrCid) <- submit p.buyer $ exerciseCmd draft Open
+
+  awrA <- query @ActiveWorkRequest p.pA
+  eveAwr <- query @ActiveWorkRequest p.eve
+  assertMsg "provider A discovers the work request from Canton" (length awrA == 1)
+  assertMsg "uninvited party does not see the work request" (length eveAwr == 0)
+
+  bidA <- submit p.pA $ createCmd S.SealedBid with rfsId = "RFS-W1"; provider = p.pA; buyer = p.buyer; price = 80.0
+  bidB <- submit p.pB $ createCmd S.SealedBid with rfsId = "RFS-W1"; provider = p.pB; buyer = p.buyer; price = 95.0
+  bidC <- submit p.pC $ createCmd S.SealedBid with rfsId = "RFS-W1"; provider = p.pC; buyer = p.buyer; price = 60.0
+  aBids <- query @S.SealedBid p.pA
+  assertMsg "provider A sees only its own bid" (map (\(_, b) -> b.price) aBids == [80.0])
+
+  iou <- submit p.buyer $ createCmd S.Iou with issuer = p.buyer; owner = p.buyer; amount = 60.0; currency = "USD.demo"
+  settleCid <- submit p.buyer $ exerciseCmd rfsCid S.Award with winningBid = bidC; losingBids = [bidA, bidB]; paymentCid = iou
+  assignCid <- submit p.buyer $ exerciseCmd awrCid Assign with settlementCid = settleCid
+
+  cAssign <- query @Assignment p.pC
+  aAssign <- query @Assignment p.pA
+  audAssign <- query @Assignment p.auditor
+  assertMsg "winner C sees its assignment" (length cAssign == 1)
+  assertMsg "loser A never sees the assignment" (length aAssign == 0)
+  assertMsg "auditor sees the assignment (observer for oversight)" (length audAssign == 1)
+
+  let sha = "0011223344556677"
+  delivCid <- submit p.pC $ exerciseCmd assignCid SubmitDelivery with
+    reportJson = canonReport; sha256 = sha; mediaType = "application/json"; byteLen = 42
+
+  bDeliv <- query @PrivateDelivery p.buyer
+  cDeliv <- query @PrivateDelivery p.pC
+  audDeliv <- query @PrivateDelivery p.auditor
+  aDeliv <- query @PrivateDelivery p.pA
+  assertMsg "buyer sees the private delivery" (length bDeliv == 1)
+  assertMsg "winner sees the private delivery" (length cDeliv == 1)
+  assertMsg "auditor CANNOT see the private delivery/report" (length audDeliv == 0)
+  assertMsg "loser CANNOT see the private delivery" (length aDeliv == 0)
+
+  _ <- submit p.buyer $ exerciseCmd delivCid Accept with acceptedAt = "2026-07-11T00:00:00Z"
+  bRec <- query @DeliveryReceipt p.buyer
+  cRec <- query @DeliveryReceipt p.pC
+  audRec <- query @DeliveryReceipt p.auditor
+  aRec <- query @DeliveryReceipt p.pA
+  assertMsg "buyer sees the receipt" (length bRec == 1)
+  assertMsg "winner sees the receipt" (length cRec == 1)
+  assertMsg "auditor sees the receipt (commitment only)" (length audRec == 1)
+  assertMsg "loser does not see the receipt" (length aRec == 0)
+  assertMsg "receipt records the committed hash + bytes" (map (\(_, r) -> (r.sha256, r.byteLen)) bRec == [(sha, 42)])
+
+  submitMustFail p.buyer $ exerciseCmd delivCid Accept with acceptedAt = "later"
+
+  debug "PROVED: discover, bid, award+prepay, assign, private deliver, verify+accept, auditor-visible receipt; no double-accept."
+  pure ()
+
+-- Only the winning provider can submit delivery.
+onlyWinnerDelivers : Script ()
+onlyWinnerDelivers = do
+  p <- setup
+  (_, assignCid) <- openBidAward p "RFS-W2"
+  submitMustFail p.pA $ exerciseCmd assignCid SubmitDelivery with reportJson = canonReport; sha256 = "x"; mediaType = "application/json"; byteLen = 42
+  submitMustFail p.eve $ exerciseCmd assignCid SubmitDelivery with reportJson = canonReport; sha256 = "x"; mediaType = "application/json"; byteLen = 42
+  _ <- submit p.pC $ exerciseCmd assignCid SubmitDelivery with reportJson = canonReport; sha256 = "x"; mediaType = "application/json"; byteLen = 42
+  pure ()
+
+-- Only the buyer can accept.
+onlyBuyerAccepts : Script ()
+onlyBuyerAccepts = do
+  p <- setup
+  (_, assignCid) <- openBidAward p "RFS-W3"
+  delivCid <- submit p.pC $ exerciseCmd assignCid SubmitDelivery with reportJson = canonReport; sha256 = "x"; mediaType = "application/json"; byteLen = 42
+  submitMustFail p.pC $ exerciseCmd delivCid Accept with acceptedAt = "t"
+  submitMustFail p.eve $ exerciseCmd delivCid Accept with acceptedAt = "t"
+  _ <- submit p.buyer $ exerciseCmd delivCid Accept with acceptedAt = "t"
+  pure ()
+
+-- Assign rejects wrong rfsId, uninvited winner, and wrong buyer.
+assignValidations : Script ()
+assignValidations = do
+  p <- setup
+  -- legitimate settlement for RFS-OTHER (winner pC)
+  draftO <- submit p.buyer $ createCmd RequestDraft with
+    jobId = "job-o"; rfsId = "RFS-OTHER"; buyer = p.buyer; invitedProviders = [p.pA, p.pB, p.pC]
+    serviceType = "site_audit"; serviceInput = "{}"; title = "t"; description = "d"; maxBudget = 100.0; auditor = None
+  (rfsO, _) <- submit p.buyer $ exerciseCmd draftO Open
+  bO <- submit p.pC $ createCmd S.SealedBid with rfsId = "RFS-OTHER"; provider = p.pC; buyer = p.buyer; price = 50.0
+  iouO <- submit p.buyer $ createCmd S.Iou with issuer = p.buyer; owner = p.buyer; amount = 50.0; currency = "USD.demo"
+  settleOther <- submit p.buyer $ exerciseCmd rfsO S.Award with winningBid = bO; losingBids = []; paymentCid = iouO
+
+  draft4 <- submit p.buyer $ createCmd RequestDraft with
+    jobId = "job-4"; rfsId = "RFS-W4"; buyer = p.buyer; invitedProviders = [p.pA, p.pB, p.pC]
+    serviceType = "site_audit"; serviceInput = "{}"; title = "t"; description = "d"; maxBudget = 100.0; auditor = None
+  (_, awr4) <- submit p.buyer $ exerciseCmd draft4 Open
+  submitMustFail p.buyer $ exerciseCmd awr4 Assign with settlementCid = settleOther  -- wrong rfsId
+
+  -- uninvited winner: AWR invites only [pA, pB]; settlement won by pC must fail
+  draft5 <- submit p.buyer $ createCmd RequestDraft with
+    jobId = "job-5"; rfsId = "RFS-W5"; buyer = p.buyer; invitedProviders = [p.pA, p.pB]
+    serviceType = "site_audit"; serviceInput = "{}"; title = "t"; description = "d"; maxBudget = 100.0; auditor = None
+  (rfs5, awr5) <- submit p.buyer $ exerciseCmd draft5 Open
+  b5 <- submit p.pC $ createCmd S.SealedBid with rfsId = "RFS-W5"; provider = p.pC; buyer = p.buyer; price = 40.0
+  iou5 <- submit p.buyer $ createCmd S.Iou with issuer = p.buyer; owner = p.buyer; amount = 40.0; currency = "USD.demo"
+  settle5 <- submit p.buyer $ exerciseCmd rfs5 S.Award with winningBid = b5; losingBids = []; paymentCid = iou5
+  submitMustFail p.buyer $ exerciseCmd awr5 Assign with settlementCid = settle5  -- pC not invited
+
+  -- wrong buyer: buyer2's settlement cannot be assigned to buyer's request
+  buyer2 <- allocateParty "Buyer2"
+  draftB2 <- submit buyer2 $ createCmd RequestDraft with
+    jobId = "job-b2"; rfsId = "RFS-W6"; buyer = buyer2; invitedProviders = [p.pC]
+    serviceType = "site_audit"; serviceInput = "{}"; title = "t"; description = "d"; maxBudget = 100.0; auditor = None
+  (rfsB2, _) <- submit buyer2 $ exerciseCmd draftB2 Open
+  bB2 <- submit p.pC $ createCmd S.SealedBid with rfsId = "RFS-W6"; provider = p.pC; buyer = buyer2; price = 30.0
+  iouB2 <- submit buyer2 $ createCmd S.Iou with issuer = buyer2; owner = buyer2; amount = 30.0; currency = "USD.demo"
+  settleB2 <- submit buyer2 $ exerciseCmd rfsB2 S.Award with winningBid = bB2; losingBids = []; paymentCid = iouB2
+  submitMustFail p.buyer $ exerciseCmd awr4 Assign with settlementCid = settleB2  -- different buyer
+  pure ()
