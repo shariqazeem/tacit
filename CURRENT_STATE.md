@@ -33,6 +33,37 @@ winner: providerC · settled 34 USD.demo · all 11 privacy invariants hold
 
 ---
 
+## 0.5 Tacit Work — the real provider spine (additive, LIVE on devnet) 🟢
+
+Beyond the negotiation demo, **Tacit Work** runs the full fulfillment lifecycle on devnet.
+It is a **new Daml package** (`tacit-work`, `9ab077f2…`) **data-dependent on the frozen
+`tacit` core** (`fdfbfcf0…`) — the demo core is untouched.
+
+- **Three separate runner processes** (`runner/`, standalone TS/ESM, node built-ins only)
+  discover work from Canton and **each bids as its own party** (Provider A/B/C) with its own
+  **private pricing policy** (base cost + margin + request complexity + local load) — never a
+  shared multiplier, never returned to the buyer, never placed on-ledger. The buyer never
+  manufactures or submits bids.
+- **Lifecycle:** `RequestDraft --Open--> (frozen Rfs + ActiveWorkRequest) --Assign(Settlement)-->
+  Assignment --SubmitDelivery--> PrivateDelivery --Accept--> DeliveryReceipt`.
+- **Real service:** the winner runs a real **`site_audit`** (bounded HTTPS fetch + security-header
+  checks, SSRF-guarded). The buyer **recomputes the SHA-256 off-ledger** and accepts only on a
+  match — Daml proves *who sees what*, *that payment happened*, and *that a commitment was made*;
+  the **buyer** proves the bytes match and refuses to accept on mismatch.
+- **Privacy:** `PrivateDelivery` (report body) → **buyer + winner only** (not auditor, not losers).
+  `DeliveryReceipt` → buyer + winner + auditor, **no report body**.
+- **Honest caveat:** the runners are separate processes with **distinct parties** but share **one
+  hosted-validator OAuth credential** — *not* separate validator operators. `USD.demo` is a demo
+  voucher.
+- **Proof:** `npm run preflight:work` (`scripts/preflight-work-e2e.mjs --require-ledger
+  --require-runners`) — **28/28** invariants incl. a **tamper test** (one flipped byte → refused)
+  and an **idempotent replay** (same settlement + receipt, no second payment). Live contract ids:
+  **[docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md)**.
+- **Buyer endpoint:** `POST /api/work/procure` (devnet/real-runner only; **no fallback**, a failure
+  is a clear non-200 with no ledger claim).
+
+---
+
 ## 1. What is REAL vs DEMO/MOCK vs AIMED-FOR  ← read this
 
 ### ✅ REAL (on the shared Canton devnet, not faked)
