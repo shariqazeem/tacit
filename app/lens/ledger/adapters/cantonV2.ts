@@ -205,10 +205,17 @@ export const cantonV2: LedgerAdapter = {
   packageIdFromEnv: V2_PACKAGE_FROM_ENV,
 
   async ensureParty(hint: string): Promise<string> {
-    const list = await req('/v2/parties', { method: 'GET', timeoutMs: 8000 });
-    const known = deepCollect(list.json, 'party').filter((p: any) => typeof p === 'string');
-    const found = known.find((id: string) => id.split('::')[0] === hint);
-    if (found) return found;
+    // The party *listing* can hang on a shared validator (observed: GET /v2/parties
+    // aborts at its timeout). Treat listing as best-effort — on any failure fall
+    // through to allocation (POST works even when GET does not).
+    try {
+      const list = await req('/v2/parties', { method: 'GET', timeoutMs: 4000 });
+      const known = deepCollect(list.json, 'party').filter((p: any) => typeof p === 'string');
+      const found = known.find((id: string) => id.split('::')[0] === hint);
+      if (found) return found;
+    } catch {
+      /* listing unavailable → allocate below */
+    }
     const alloc = await req('/v2/parties', { method: 'POST', body: { partyIdHint: hint, identityProviderId: '' } });
     if (alloc.http < 200 || alloc.http >= 300)
       throw new Error(`allocate party failed: HTTP ${alloc.http} ${alloc.text.slice(0, 200)}`);

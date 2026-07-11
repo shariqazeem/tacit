@@ -50,11 +50,35 @@ Sealed-bid procurement between agents, where **privacy is enforced by the ledger
 | Auditor persona (sees settlements, never bids/IOUs) | ✅ **Real** |
 | MCP: external agent transacts as its **own** Canton party | ✅ **Real** |
 | Our Daml DAR deployed on devnet (`fdfbfcf0…`) | ✅ **Real** |
-| The **three provider bidders** | 🟡 **App-operated** — run inside the app (deterministic, or LLM-assisted). *Not* independent external services. |
+| **Tacit Work:** separate provider runner processes, each bidding as its **own** Canton party (`tacit-work` pkg `9ab077f2…`) | ✅ **Real** — [docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md) |
+| **Tacit Work:** winner runs a **real** `site_audit`; buyer recomputes SHA-256 off-ledger and refuses to accept on mismatch | ✅ **Real** |
+| **Tacit Work:** private delivery (report hidden from the auditor & losers) + auditor-visible receipt (no report body) | ✅ **Real** |
+| MCP: external agent transacts as its **own** Canton party | ✅ **Real** |
+| The provider bidders in the **`/lens` negotiation demo** | 🟡 **App-operated** — run inside the app (deterministic / LLM-assisted). *Tacit Work* (above) uses separate runner processes. |
+| Tacit Work runners: **separate processes, distinct parties**, but one shared hosted-validator OAuth credential | 🟡 **Not** separate validator operators or independently-credentialed institutions. |
 | `USD.demo` payment token | 🟡 **Demo voucher** — self-issued by the buyer. *Not* real money, a stablecoin, or Canton Coin. |
 | DEMO FALLBACK mode (ledger unreachable) | 🟡 **Simulated** — deterministic, in-memory, **clearly labeled**, and it never claims value moved. |
 | Stablecoin / Canton Coin settlement | 🔜 Roadmap |
-| Independent provider runners + real service fulfillment + delivery receipt | 🔜 Roadmap |
+| More service adapters beyond `site_audit` | 🔜 Roadmap |
+
+## Tacit Work — the real provider spine (additive)
+Beyond the negotiation demo, **Tacit Work** runs the full fulfillment lifecycle on devnet.
+Three **separate runner processes** discover a work request from Canton and **each bids as
+its own party** with its own private pricing (base cost + margin + complexity + load — never
+shared, never on-ledger). The buyer awards + prepays the lowest bid, the **winner performs a
+real `site_audit`** and delivers it privately, and the buyer **recomputes the SHA-256
+off-ledger** — accepting only on a match, which yields an **auditor-visible receipt that
+contains no report body**.
+
+```bash
+# 3 runners + app in devnet mode, then:
+npm run preflight:work     # 28/28 invariants incl. a tamper test + idempotent replay
+```
+It's a new Daml package (`tacit-work`, `9ab077f2…`) **data-dependent on the frozen `tacit`
+core** — the demo is untouched. Evidence + contract ids: [docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md).
+Runners are separate processes with **distinct parties** but share one hosted-validator OAuth
+credential — **not** separate validator operators. `site_audit` is the first real adapter;
+Daml proves *who sees what* and *that payment happened*, the **buyer** proves the bytes match.
 
 ## Devnet architecture (exact)
 ```

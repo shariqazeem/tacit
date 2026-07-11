@@ -1,0 +1,11 @@
+sdk-version: 3.4.11
+name: tacit-work-test
+version: 0.1.0
+source: .
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+data-dependencies:
+  - ../tacit-work/.daml/dist/tacit-work-0.1.0.dar
+  - ../daml3/.daml/dist/tacit-0.1.0.dar

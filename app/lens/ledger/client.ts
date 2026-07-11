@@ -67,6 +67,11 @@ export const partyHint = (name: string): string => name.trim().replace(/[^A-Za-z
 export const ensureParty = (hint: string): Promise<string> =>
   PINNED_PARTIES[hint] ? Promise.resolve(PINNED_PARTIES[hint]) : adapter.ensureParty(hint);
 
+/** The pinned party for this hint, or undefined. Lets callers prefer a pinned
+ *  identity (and avoid the shared validator's hanging party listing) before
+ *  falling back to allocation. */
+export const pinnedParty = (hint: string): string | undefined => PINNED_PARTIES[hint];
+
 /** Create a contract, submitting as `actAs`. Returns the new contract id. */
 export const create = (templateId: string, payload: Record<string, unknown>, actAs: string[]): Promise<string> =>
   adapter.create(templateId, payload, actAs);
