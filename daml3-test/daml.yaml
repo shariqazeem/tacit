@@ -1,0 +1,12 @@
+sdk-version: 3.4.11
+name: tacit-test
+version: 0.1.0
+source: .
+# The privacy/atomicity proof (daml test) — depends on the templates DAR as a
+# data-dependency so the uploaded package (../daml3) never carries daml-script.
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+data-dependencies:
+  - ../daml3/.daml/dist/tacit-0.1.0.dar

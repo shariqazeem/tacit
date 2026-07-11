@@ -1,136 +1,97 @@
-// Tacit — server-side Daml JSON Ledger API client.
+// Tacit — the ledger client FACADE.
 //
-// Talks to the Canton sandbox's JSON API over HTTP. Dev auth: HS256 JWTs with a
-// dummy secret (the sandbox runs --allow-insecure-tokens, so the signature is
-// not verified). The custom `https://daml.com/ledger-api` claim carries the
-// ledgerId/applicationId and actAs/readAs (or admin) — and `ledgerId` is
-// REQUIRED for command submission (/v1/create), which is the subtle bit.
+// One stable surface for the whole app (read.ts, write.ts, economy.ts, api/*);
+// it delegates to a mode-selected adapter and re-exports the exact names call
+// sites already import, so the refactor to multi-target is invisible upstream.
 //
-// All config has working defaults for the local sandbox and can be overridden
-// by env for the deployment VM.
+//   TACIT_LEDGER_MODE = sandbox        → Adapter A (Daml 2.x v1 JSON API, dev JWT)   [default]
+//                     = canton3-local  → Adapter B (Canton 3.x v2 JSON Ledger API, auth off/static)
+//                     = devnet         → Adapter B (same code, OAuth2 + real endpoint)
+//
+// Devnet is a one-env-var flip: canton3-local proves the entire v2 path locally.
 
-import crypto from 'crypto';
+import type { ContractRow, LedgerAdapter, LedgerHealth, LedgerMode } from './adapters/types';
+import {
+  ACTIVE_LEDGER_URL,
+  ACTIVE_PACKAGE_FROM_ENV,
+  ACTIVE_PACKAGE_ID,
+  IS_V2,
+  LEDGER_MODE,
+  PINNED_PARTIES,
+  V2_PACKAGE_NAME,
+} from './adapters/config';
+import { sandboxV1 } from './adapters/sandboxV1';
+import { cantonV2 } from './adapters/cantonV2';
 
-const JSON_API = process.env.DAML_JSON_API_URL || 'http://localhost:7575';
-const LEDGER_ID = process.env.DAML_LEDGER_ID || 'sandbox';
-const APP_ID = process.env.DAML_APPLICATION_ID || 'tacit';
-const SECRET = process.env.DAML_TOKEN_SECRET || 'tacit-dev-secret';
-export const PACKAGE_ID =
-  process.env.TACIT_PACKAGE_ID || '66e7ac22bcf8dce96c8449b584b85ba19e4dd03c48211b1d5990e0ceb3af5e04';
+const adapter: LedgerAdapter = IS_V2 ? cantonV2 : sandboxV1;
 
-/** Where the JSON Ledger API lives (host:port only — no secrets). For /api/health. */
-export const LEDGER_URL = JSON_API;
-/** True when the package id came from env rather than the hardcoded default. */
-export const PACKAGE_ID_FROM_ENV = !!process.env.TACIT_PACKAGE_ID;
+/** The active ledger mode — for /api/health and honesty surfaces. */
+export const LEDGER_MODE_ACTIVE: LedgerMode = LEDGER_MODE;
+/** Where the ledger API lives (host:port only — no secrets). */
+export const LEDGER_URL = ACTIVE_LEDGER_URL;
+/** The package id whose templates we target (v1 or v2, per mode). */
+export const PACKAGE_ID = ACTIVE_PACKAGE_ID;
+/** True when the (active) package id came from env rather than a hardcoded default. */
+export const PACKAGE_ID_FROM_ENV = ACTIVE_PACKAGE_FROM_ENV;
 
-if (!PACKAGE_ID_FROM_ENV) {
-  // The package id changes whenever the DAR is rebuilt — warn so deploys notice.
+if (IS_V2 && !PACKAGE_ID) {
+  console.warn(
+    `[tacit] TACIT_LEDGER_MODE=${LEDGER_MODE} but TACIT_PACKAGE_ID_V2 is not set — ` +
+      `v2 templates are unresolved. Build the Daml 3 DAR (npm run daml:build:v2) and set TACIT_PACKAGE_ID_V2.`,
+  );
+} else if (!IS_V2 && !PACKAGE_ID_FROM_ENV) {
   console.warn(
     `[tacit] TACIT_PACKAGE_ID not set — using hardcoded default ${PACKAGE_ID.slice(0, 8)}…. ` +
       `Set TACIT_PACKAGE_ID after rebuilding the DAR.`,
   );
 }
 
+// Template refs: v1/sandbox uses the hex package id; Canton 3.x (v2) references
+// the package by NAME (`#tacit`), which is what its command + query filters want.
+const TEMPLATE_REF = IS_V2 ? `#${V2_PACKAGE_NAME}` : PACKAGE_ID;
+/** Fully-qualified template ids for the active mode. */
 export const T = {
-  Rfs: `${PACKAGE_ID}:Tacit.Sealed:Rfs`,
-  SealedBid: `${PACKAGE_ID}:Tacit.Sealed:SealedBid`,
-  Settlement: `${PACKAGE_ID}:Tacit.Sealed:Settlement`,
+  Rfs: `${TEMPLATE_REF}:Tacit.Sealed:Rfs`,
+  SealedBid: `${TEMPLATE_REF}:Tacit.Sealed:SealedBid`,
+  Settlement: `${TEMPLATE_REF}:Tacit.Sealed:Settlement`,
+  Iou: `${TEMPLATE_REF}:Tacit.Sealed:Iou`,
 };
 
-const b64url = (s: string) => Buffer.from(s).toString('base64url');
+/** Sanitize a display name into a valid Canton party-id hint (no spaces/punct). */
+export const partyHint = (name: string): string => name.trim().replace(/[^A-Za-z0-9_-]/g, '_') || 'Party';
 
-function mint(claims: Record<string, unknown>): string {
-  const c = { applicationId: APP_ID, ledgerId: LEDGER_ID, ...claims };
-  const h = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const exp = Math.floor(Date.now() / 1000) + 3600;
-  const p = b64url(JSON.stringify({ exp, 'https://daml.com/ledger-api': c }));
-  const sig = crypto.createHmac('sha256', SECRET).update(`${h}.${p}`).digest('base64url');
-  return `${h}.${p}.${sig}`;
-}
-const adminToken = () => mint({ admin: true });
-const partyToken = (parties: string[]) => mint({ actAs: parties, readAs: parties });
+// ── delegated surface (unchanged signatures) ─────────────────────────────────
 
-async function call(path: string, token: string, body?: unknown, method = 'POST', timeoutMs = 20000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(JSON_API + path, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: ctrl.signal,
-    });
-    const text = await res.text();
-    let json: any;
-    try { json = JSON.parse(text); } catch { json = text; }
-    return { http: res.status, json };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+/** Reuse an existing party with this hint, or allocate it. Returns the full party id.
+ *  Pinned parties (devnet shared validator) short-circuit — no listing/allocation. */
+export const ensureParty = (hint: string): Promise<string> =>
+  PINNED_PARTIES[hint] ? Promise.resolve(PINNED_PARTIES[hint]) : adapter.ensureParty(hint);
 
-export async function ledgerReachable(): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch(JSON_API + '/livez', { signal: ctrl.signal });
-    clearTimeout(t);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/** Reachability + a human-readable error, for /api/health. */
-export async function ledgerHealth(): Promise<{ reachable: boolean; error: string | null }> {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 3000);
-    const res = await fetch(JSON_API + '/livez', { signal: ctrl.signal });
-    clearTimeout(t);
-    return res.ok ? { reachable: true, error: null } : { reachable: false, error: `JSON API returned HTTP ${res.status}` };
-  } catch (e: any) {
-    return { reachable: false, error: String(e?.message || e) };
-  }
-}
-
-/** Reuse an existing party with this hint, or allocate it. Returns the full party id. */
-export async function ensureParty(hint: string): Promise<string> {
-  const list = await call('/v1/parties', adminToken(), undefined, 'GET');
-  const found = (list.json?.result || [])
-    .map((p: any) => p.identifier as string)
-    .find((id: string) => id.startsWith(hint + '::'));
-  if (found) return found;
-  const r = await call('/v1/parties/allocate', adminToken(), { identifierHint: hint });
-  if (r.http !== 200 || r.json?.status !== 200) throw new Error('allocate failed: ' + JSON.stringify(r.json).slice(0, 200));
-  return r.json.result.identifier as string;
-}
-
-/** Create a contract, submitting as `actAs` (one party, or several for multi-signatory). */
-export async function create(templateId: string, payload: Record<string, unknown>, actAs: string[]): Promise<string> {
-  const r = await call('/v1/create', partyToken(actAs), { templateId, payload });
-  if (r.http !== 200 || r.json?.status !== 200) throw new Error('create failed: ' + JSON.stringify(r.json).slice(0, 300));
-  return r.json.result.contractId as string;
-}
+/** Create a contract, submitting as `actAs`. Returns the new contract id. */
+export const create = (templateId: string, payload: Record<string, unknown>, actAs: string[]): Promise<string> =>
+  adapter.create(templateId, payload, actAs);
 
 /** Query active contracts visible to `party` (the ledger enforces visibility). */
-export async function queryAs(party: string, templateIds: string[], query?: Record<string, unknown>): Promise<any[]> {
-  const r = await call('/v1/query', partyToken([party]), query ? { templateIds, query } : { templateIds });
-  return r.json?.result || [];
-}
+export const queryAs = (party: string, templateIds: string[], query?: Record<string, unknown>): Promise<ContractRow[]> =>
+  adapter.queryAs(party, templateIds, query);
 
-/**
- * Exercise a choice on a contract, submitting as `actAs`. Returns the choice's
- * result (e.g. the ContractId of a contract the choice created).
- */
-export async function exercise(
+/** Exercise a choice, submitting as `actAs`. Returns the choice's result. */
+export const exercise = (
   templateId: string,
   contractId: string,
   choice: string,
   argument: Record<string, unknown>,
   actAs: string[],
-): Promise<any> {
-  const r = await call('/v1/exercise', partyToken(actAs), { templateId, contractId, choice, argument });
-  if (r.http !== 200 || r.json?.status !== 200) throw new Error('exercise failed: ' + JSON.stringify(r.json).slice(0, 300));
-  return r.json.result.exerciseResult;
-}
+): Promise<any> => adapter.exercise(templateId, contractId, choice, argument, actAs);
+
+/** Fast liveness probe. */
+export const ledgerReachable = (): Promise<boolean> => adapter.reachable();
+
+/** Liveness + human-readable error (+ optional partyCount) for /api/health. */
+export const ledgerHealth = (): Promise<LedgerHealth> => adapter.health();
+
+/** Upload a DAR to the participant (v2 only; sandbox loads its DAR at boot). */
+export const uploadDar = (dar: Uint8Array): Promise<void> => {
+  if (!adapter.uploadDar) throw new Error(`DAR upload is not supported in ${LEDGER_MODE} mode`);
+  return adapter.uploadDar(dar);
+};

@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+mcp/node_modules
+mcp/dist
 /.pnp
 .pnp.*
 .yarn/*
@@ -19,6 +21,9 @@
 
 # production
 /build
+
+# daml build artifacts (DARs are rebuildable via npm run daml:build:v1|v2)
+.daml/
 
 # misc
 .DS_Store

@@ -19,7 +19,8 @@ export type Persona =
   | 'buyer'
   | 'providerA'
   | 'providerB'
-  | 'providerC';
+  | 'providerC'
+  | 'auditor';
 
 export interface PersonaMeta {
   id: Persona;
@@ -50,6 +51,12 @@ export interface Bid {
 
 export interface Deal {
   id: string;
+  /**
+   * Ledger-derived full party ids per persona (`Name::fingerprint`) — present
+   * ONLY on ON-CANTON deals. Surfaced in the Lens as proof these are real
+   * on-network parties, not app labels. Absent on the memory fallback.
+   */
+  parties?: Partial<Record<Persona, string>>;
   /** Public-safe existence marker — confirms a deal exists without its contents. */
   existence: Field<string>;
   rfs: {
@@ -67,6 +74,17 @@ export interface Deal {
     txId: Field<string>;
     /** Public commitment — the network confirms a tx occurred, not its contents. */
     commitment: Field<string>;
+    /**
+     * P2.1 — value that moved INSIDE the atomic award (a demo IOU transfer).
+     * Additive + optional: present ONLY on live-ledger deals. The memory fallback
+     * omits it entirely, so the UI never claims value moved when it didn't.
+     * `visibleTo` (buyer + winner only) is derived from the ledger Iou snapshot.
+     */
+    payment?: {
+      amount: Field<number>;
+      currency: Field<string>;
+      iouContractId: Field<string>;
+    };
   };
 }
 
@@ -105,6 +123,13 @@ export const PERSONAS: PersonaMeta[] = [
     role: 'Submitted the winning bid',
     caption:
       'You are Provider C — you won. You see your own bid and the settlement, yet you never saw a single competitor’s price.',
+  },
+  {
+    id: 'auditor',
+    label: 'Auditor',
+    role: 'Permissioned compliance',
+    caption:
+      'You are the Auditor — permissioned oversight. You can verify every settlement (winner, price, amount paid) but Canton never returns a single sealed bid to you. Compliance without surveillance.',
   },
 ];
 

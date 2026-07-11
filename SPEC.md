@@ -66,10 +66,10 @@ Sealed-bid procurement between agents:
 Sealed-bid negotiation · atomic award (`Rfs.Award`) · the Ledger Lens · live Canton write + per-party read-back · honest ledger/fallback labeling · `/api/health` + `preflight`.
 
 ### 🔜 Building toward (roadmap, in order)
-1. **P2.1 — real payment:** transfer a demo IOU/token inside `Accept` so the award moves *value*, not just a record. *(Closes the "no money moves yet" gap.)*
-2. **MCP integration:** Tacit as agent tools — the differentiator ("infrastructure for the agent economy").
-3. **Auditor / regulator persona** in the Lens (a permissioned compliance view).
-4. **Tacit landing page** at `/` (currently redirects to `/lens`).
+1. ✅ **P2.1 — real payment (done):** a demo IOU transfers to the winner inside `Accept` so the award moves *value*, not just a record; `Settlement.paid` records it; visible to buyer + winner only.
+2. ✅ **MCP integration (done):** an MCP server (`mcp/`) exposes Tacit as agent tools (`tacit_health` · `tacit_procure` · `tacit_explain_privacy`) — any AI agent can run a private procurement on Canton and get real contract ids. The differentiator ("infrastructure for the agent economy").
+3. ✅ **Auditor / regulator persona (done):** a permissioned party observes the `Rfs` + `Settlement` (never a `SealedBid` or `Iou`) — a 6th Lens persona that verifies settlements (winner, price, amount paid) without seeing a single sealed bid. Compliance without surveillance.
+4. ✅ **Tacit landing page (done):** `/` is a scroll-driven product story (5 beats) that hands off into `/lens`.
 5. **Production deploy → live link**, then the **3-minute video**.
 
 ### 🚫 Explicitly out of scope (v1)

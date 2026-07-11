@@ -3,22 +3,22 @@
 import { useCallback, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Deal } from '../types';
+import { C, FONT } from './theme';
 import { LensView } from './LensView';
 import { NegotiationTheater } from './NegotiationTheater';
+import { IdleHero } from './IdleHero';
+import { TopBar } from './TopBar';
+import { AmbientBackground } from './AmbientBackground';
+import { EconomyStrip } from './EconomyStrip';
 import type { Step } from '../agents/negotiation';
-
-const ACCENT = '#7C3AED';
-const INK = '#0A0A0B';
-const MONO = "'JetBrains Mono', ui-monospace, monospace";
-const SANS = "'Inter', sans-serif";
 
 type Phase = 'idle' | 'running' | 'revealed';
 
 /**
  * The /lens experience: idle hero → live negotiation theater → Lens reveal.
- * Fetches a real deal from /api/negotiate and feeds it to LensView (untouched).
- * Falls back to the seed deal if the engine is unreachable, so the demo never
- * dead-ends.
+ * Fetches a real deal from /api/negotiate and feeds it to LensView. Falls back
+ * to the seed deal (clearly labeled DEMO FALLBACK) if the engine is unreachable,
+ * so the demo never dead-ends. Presentation only — no data/visibility logic.
  */
 export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
   const [phase, setPhase] = useState<Phase>('idle');
@@ -27,6 +27,8 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
   const [source, setSource] = useState<'ledger' | 'memory' | null>(null);
   const [ranOnce, setRanOnce] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [usedLLM, setUsedLLM] = useState(false);
+  const [runCount, setRunCount] = useState(0);
 
   const reveal = useCallback(() => setPhase('revealed'), []);
 
@@ -35,6 +37,7 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
     setLoading(true);
     setTranscript([]);
     setSource(null);
+    setUsedLLM(false);
     setRanOnce(true);
     try {
       const res = await fetch('/api/negotiate', { cache: 'no-store' });
@@ -42,6 +45,8 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
       const data = await res.json();
       setDeal(data.deal);
       setSource(data.dealSource === 'ledger' ? 'ledger' : 'memory');
+      setUsedLLM(!!data.usedLLM);
+      setRunCount((c) => c + 1); // refreshes the economy strip with the new deal
       const t: Step[] = Array.isArray(data.transcript) ? data.transcript : [];
       setTranscript(t);
       setLoading(false);
@@ -56,45 +61,8 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
   }, [seedDeal]);
 
   return (
-    <div style={{ background: '#FAFAF9', minHeight: '100vh' }}>
-      {/* Control (hidden on idle — the hero owns the CTA there) */}
-      {phase !== 'idle' && (
-        <div className="fixed right-5 top-5 z-50 flex items-center gap-2">
-          {ranOnce && source && (
-            <span
-              className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-              title={
-                source === 'ledger'
-                  ? 'Deal written to and read back from the live Canton ledger'
-                  : 'Canton ledger unreachable — deterministic in-memory simulation'
-              }
-              style={{
-                fontFamily: MONO,
-                color: source === 'ledger' ? '#0E7490' : '#B45309',
-                background: source === 'ledger' ? '#0E749014' : '#B4530914',
-                border: '1px solid rgba(0,0,0,0.06)',
-              }}
-            >
-              {source === 'ledger' ? 'ON CANTON' : 'DEMO FALLBACK'}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={run}
-            disabled={phase === 'running'}
-            className="rounded-full px-4 py-2 text-[13px] font-semibold"
-            style={{
-              fontFamily: SANS,
-              color: '#fff',
-              background: phase === 'running' ? '#C4B5FD' : ACCENT,
-              boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-              cursor: phase === 'running' ? 'default' : 'pointer',
-            }}
-          >
-            {phase === 'running' ? '● Negotiating…' : '↻ Replay negotiation'}
-          </button>
-        </div>
-      )}
+    <div style={{ background: C.bg, minHeight: '100vh' }}>
+      <TopBar source={source} showControls={ranOnce} running={phase === 'running'} onReplay={run} />
 
       <AnimatePresence mode="wait">
         {phase === 'idle' && (
@@ -111,13 +79,25 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
 
         {phase === 'running' && !loading && transcript.length > 0 && (
           <motion.div key="theater" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-            <NegotiationTheater transcript={transcript} onDone={reveal} />
+            <NegotiationTheater
+              transcript={transcript}
+              onDone={reveal}
+              usedLLM={usedLLM}
+              // The theater's count-up is the operator/director view; it only ever
+              // fires for a real ledger deal (never in fallback), so it can never
+              // claim value moved when it didn't.
+              paidAmount={source === 'ledger' ? deal.settlement.payment?.amount.value : undefined}
+              paidCurrency={source === 'ledger' ? deal.settlement.payment?.currency.value : undefined}
+            />
           </motion.div>
         )}
 
         {phase === 'revealed' && (
           <motion.div key="rev" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
             <LensView deal={deal} source={source} />
+            {/* The live ledger economy — only under a real on-ledger deal. Self-
+                hides if the ledger is unreachable, so it never fabricates stats. */}
+            {source === 'ledger' && <EconomyStrip refreshKey={runCount} />}
           </motion.div>
         )}
       </AnimatePresence>
@@ -125,52 +105,21 @@ export function LensExperience({ seedDeal }: { seedDeal: Deal }) {
   );
 }
 
-function IdleHero({ onRun, onSkip }: { onRun: () => void; onSkip: () => void }) {
-  return (
-    <div className="mx-auto max-w-3xl px-6 py-24 text-center">
-      <div className="flex items-center justify-center gap-2 text-[12px]" style={{ fontFamily: MONO }}>
-        <span style={{ color: ACCENT, fontWeight: 600 }}>TACIT</span>
-        <span style={{ color: '#D1D5DB' }}>/</span>
-        <span style={{ color: '#9CA3AF' }}>LEDGER LENS</span>
-      </div>
-      <h1 className="mt-4 text-[34px] font-bold leading-tight" style={{ color: INK }}>
-        Watch three AI agents
-        <br />
-        negotiate a private deal.
-      </h1>
-      <p className="mx-auto mt-3 max-w-xl text-[16px] leading-relaxed" style={{ color: '#6B7280' }}>
-        A buyer agent posts a need. Three providers bid — sealed. Then see exactly what each party
-        can, and cannot, see on Canton.
-      </p>
-      <div className="mt-8 flex items-center justify-center gap-4">
-        <button
-          type="button"
-          onClick={onRun}
-          className="rounded-full px-6 py-3 text-[15px] font-semibold"
-          style={{ fontFamily: SANS, color: '#fff', background: ACCENT, boxShadow: '0 6px 20px -8px rgba(124,58,237,0.6)' }}
-        >
-          ▶ Run live negotiation
-        </button>
-        <button type="button" onClick={onSkip} className="text-[14px] font-medium" style={{ color: '#6B7280', fontFamily: SANS }}>
-          or skip to the ledger →
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function Loader() {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-28 text-center">
-      <motion.div
-        className="mx-auto h-3 w-3 rounded-full"
-        style={{ background: ACCENT }}
-        animate={{ opacity: [1, 0.3, 1], scale: [1, 0.8, 1] }}
-        transition={{ duration: 1, repeat: Infinity }}
-      />
-      <p className="mt-4 text-[14px]" style={{ color: '#6B7280', fontFamily: SANS }}>
-        Spinning up agents…
-      </p>
-    </div>
+    <section className="relative flex min-h-[100svh] w-full items-center justify-center overflow-hidden" style={{ background: C.bg }}>
+      <AmbientBackground />
+      <div className="relative z-10 flex flex-col items-center">
+        <motion.div
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ background: C.violet }}
+          animate={{ opacity: [1, 0.3, 1], scale: [1, 0.7, 1] }}
+          transition={{ duration: 1.1, repeat: Infinity }}
+        />
+        <p className="mt-4 text-[15px]" style={{ color: C.ink2, fontFamily: FONT.sans }}>
+          Convening agents…
+        </p>
+      </div>
+    </section>
   );
 }

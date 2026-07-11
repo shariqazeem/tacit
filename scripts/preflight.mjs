@@ -65,8 +65,20 @@ if (!neg.ok || !neg.json || !neg.json.deal || !Array.isArray(neg.json.deal.bids)
 
 if (neg.json.dealSource === 'ledger') {
   const cid = neg.json.ledger?.contracts?.settlement || '(none)';
+  const iou = neg.json.ledger?.contracts?.iou || '';
+  const pay = neg.json.deal?.settlement?.payment;
   ok(`/api/negotiate → LEDGER-backed · settlement contract ${String(cid).slice(0, 12)}…`);
+
+  // P2.1: a live-ledger deal MUST carry payment data + a real Iou contract id.
+  if (!pay || typeof pay.amount?.value !== 'number' || !pay.iouContractId?.value || !iou) {
+    fail(`LEDGER-backed but payment data missing — payment=${JSON.stringify(pay)} iou=${iou || '(none)'}`);
+  }
+  ok(`PAYMENT VERIFIED · ${pay.amount.value} ${pay.currency?.value ?? ''} moved · iou ${String(iou).slice(0, 12)}…`);
 } else {
+  // Honesty: a fallback deal must NEVER carry payment data.
+  if (neg.json.deal?.settlement?.payment) {
+    fail(`FALLBACK deal must not claim payment, but settlement.payment is present: ${JSON.stringify(neg.json.deal.settlement.payment)}`);
+  }
   warn(`/api/negotiate → FALLBACK (deterministic in-memory). dealSource=${neg.json.dealSource}. Start the Canton ledger for the live privacy proof.`);
 }
 

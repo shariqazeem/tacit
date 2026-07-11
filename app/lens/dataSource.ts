@@ -8,30 +8,34 @@
 import { Deal, Persona } from './types';
 
 const PARTICIPANTS: Persona[] = ['buyer', 'providerA', 'providerB', 'providerC'];
+// The permissioned auditor sees the request + the settlement, but never a bid —
+// so it is included in the request/settlement/public fields and NOT the bids.
+const PARTICIPANTS_AUD: Persona[] = [...PARTICIPANTS, 'auditor'];
+const PUBLIC_AUD: Persona[] = ['public', ...PARTICIPANTS, 'auditor'];
 
 const SEED_DEAL: Deal = {
   id: 'TACIT-DEAL-7F3A',
   existence: {
     value: 'A confidential deal exists on Tacit',
-    visibleTo: ['public', ...PARTICIPANTS],
+    visibleTo: PUBLIC_AUD,
   },
   rfs: {
     title: {
       value: 'Market-intelligence report',
-      visibleTo: PARTICIPANTS,
+      visibleTo: PARTICIPANTS_AUD,
     },
     description: {
       value:
         'Competitive analysis of three named DeFi lending protocols, delivered as a structured report.',
-      visibleTo: PARTICIPANTS,
+      visibleTo: PARTICIPANTS_AUD,
     },
     budget: {
       value: 'Budget < $50',
-      visibleTo: PARTICIPANTS,
+      visibleTo: PARTICIPANTS_AUD,
     },
     buyer: {
       value: 'Acme Research Agent',
-      visibleTo: PARTICIPANTS,
+      visibleTo: PARTICIPANTS_AUD,
     },
   },
   bids: [
@@ -64,23 +68,23 @@ const SEED_DEAL: Deal = {
     // Static sample shown before a live run — honest, non-ledger copy.
     status: {
       value: 'Sample deal',
-      visibleTo: ['public', ...PARTICIPANTS],
+      visibleTo: PUBLIC_AUD,
     },
     winner: {
       value: 'Provider C',
-      visibleTo: ['buyer', 'providerC'],
+      visibleTo: ['buyer', 'providerC', 'auditor'],
     },
     amount: {
       value: 28,
-      visibleTo: ['buyer', 'providerC'],
+      visibleTo: ['buyer', 'providerC', 'auditor'],
     },
     txId: {
       value: '— run live for a contract id',
-      visibleTo: ['buyer', 'providerC'],
+      visibleTo: ['buyer', 'providerC', 'auditor'],
     },
     commitment: {
       value: 'illustrative · not on ledger',
-      visibleTo: ['public', ...PARTICIPANTS],
+      visibleTo: PUBLIC_AUD,
     },
   },
 };

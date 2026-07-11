@@ -8,7 +8,15 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "preflight": "node scripts/preflight.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "preflight:e2e": "node scripts/preflight-e2e.mjs",
+    "daml:build:v1": "cd daml && daml build",
+    "daml:build:v2": "cd daml3 && daml build",
+    "daml:test:v2": "cd daml3 && daml build && cd ../daml3-test && daml test",
+    "canton3:local": "bash scripts/canton3-local.sh",
+    "devnet:bootstrap": "node scripts/devnet-bootstrap.mjs",
+    "mcp:build": "npm --prefix mcp install && npm --prefix mcp run build",
+    "mcp:start": "node mcp/dist/server.js"
   },
   "dependencies": {
     "framer-motion": "^12.23.24",

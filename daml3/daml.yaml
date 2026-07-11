@@ -1,0 +1,9 @@
+sdk-version: 3.4.11
+name: tacit
+version: 0.1.0
+source: .
+# Templates ONLY — no daml-script — so the DAR we upload to a Canton 3.x
+# participant/devnet stays clean (the privacy proof lives in ../daml3-test).
+dependencies:
+  - daml-prim
+  - daml-stdlib
