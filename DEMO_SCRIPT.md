@@ -1,22 +1,29 @@
 # Tacit — 3-minute demo script
 
-**Thesis in one line:** *AI agents are starting to transact. On a transparent chain every deal leaks your prices to competitors. Tacit settles agent commerce **privately** on Canton — and the ledger, not the app, decides who sees what.*
+**Thesis in one line:** *AI agents are starting to transact. On a transparent chain every deal leaks your prices to competitors. Tacit settles agent commerce **privately** on the real Canton devnet — and the ledger, not the app, decides who sees what.*
 
 **Setup before recording**
-- Ledger up (devnet validator, or canton3-local LocalNet); app running against it; run `npm run preflight:e2e -- --require-ledger` and confirm green + an evidence block.
-- Warm one negotiation first (a cold participant can be slow on the first call).
-- Have the **Verify drawer** ready to open and the **persona switcher** visible.
+- The app is **live on the Canton devnet**: http://80.225.209.190:3200. Confirm before recording:
+  ```
+  curl -s http://80.225.209.190:3200/api/health                    # → "mode":"devnet","reachable":true
+  APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger   # → green, evidence block
+  ```
+- Warm one negotiation on `/lens` first (the first call can be slightly slow).
+- Have the **persona switcher** visible and be ready to **copy the settlement contract id**.
 
-**Honesty rule (on camera):** the badge reads whatever is true. If we're on the shared devnet it says **ON CANTON DEVNET**; if we're on the local Splice network it says **ON CANTON · LOCAL** and you *say so out loud*: "this is the exact devnet code path running on a local Canton network while our IP allowlist finalizes." Never call local "devnet."
+**Honesty rule (on camera):** the badge reads whatever is true.
+- On the shared devnet (the intended flow) it says **ON CANTON DEVNET** — say "this is the real Canton devnet, via 5North's hosted validator on the Global Synchronizer."
+- If the devnet validator is unreachable mid-demo, the app flips to **DEMO FALLBACK** (deterministic, in-memory) — *say so out loud* and never claim a fallback deal touched the ledger. (A local Canton stack, `canton3-local`, is available as insurance and reads **ON CANTON · LOCAL** — also say so if used.)
+- `USD.demo` is a **demo voucher**, not real money — say "a demo voucher" when it appears. The three providers are **built-in bidders**, not independent external services — the external-agent story is the MCP beat.
 
-| Time | On screen | Say | Contingency (canton3-local) |
+| Time | On screen | Say | If devnet is unreachable |
 |---|---|---|---|
-| **0:00–0:20** Hook | Landing hero: "The private economy for AI agents." | "Every deal your AI agent makes on a public chain broadcasts your prices and partners to your competitors. That's the tax of transparency." | — |
+| **0:00–0:20** Hook | Landing hero: "The private economy for AI agents." | "Every deal your AI agent makes on a public chain broadcasts your prices and partners to competitors. That's the tax of transparency." | — |
 | **0:20–0:40** Problem | Landing "problem" beat (the public-mempool leak vignette) | "Agents already buy data, compute, services from each other. Do it on a transparent chain and your entire negotiation is public." | — |
-| **0:40–1:30** Live deal | `/lens` → ▶ Run negotiation → request posts, **three sealed bids** land and seal into 🔒 chips, **atomic award** fires, payment counts up. Badge: **ON CANTON DEVNET**. | "A buyer agent posts a request. Three provider agents submit sealed bids — each price sealed. The buyer awards the lowest in **one atomic Canton transaction**: losers archived, winner paid, settlement recorded. This just committed to Canton devnet." | Badge says **ON CANTON · LOCAL**; say "running on a live local Canton network — the same v2 ledger code we run on devnet." |
-| **1:30–2:10** The proof | Switch persona: **Public** (all sealed) → losing **Provider** (sees only its own bid) → **Buyer** (sees all) → **Auditor** (sees the settlement + amount, **bids stay frosted**). | "Don't trust my claim — switch the persona. The losing provider never sees a competitor's price. The auditor can verify the settlement and the amount paid, but **never a single sealed bid**. Compliance without surveillance. This visibility is read back from the ledger — the UI *cannot* lie." | identical |
-| **2:10–2:40** Agent-to-agent (MCP) | Trigger `tacit_procure` from an external Claude agent (MCP); it settles as **its own Canton party**. Show the default buyer's history — that deal is **absent**. | "Any external AI agent can transact through Tacit as its own Canton party. Here Claude runs a private procurement — and the default buyer can't even see it happened." | identical |
-| **2:40–2:55** Undeniable | Economy strip ticks up. Open the **Verify drawer**: real **settlement contract id** + the settling **party ids** (full `name::fingerprint`) + a copyable query. | "The economy grew by exactly the price that moved. Here's the real contract id on Canton devnet, and the real party fingerprints — verify it yourself." | Read the id; say "on our local Canton network — the devnet id will be identical in shape once our validator IP is live." |
-| **2:55–3:00** Close | Landing close / wordmark. | "Tacit. The private economy for AI agents. Live on Canton." | "…on Canton — devnet the moment our node is allowlisted." |
+| **0:40–1:30** Live deal | `/lens` → ▶ Run negotiation → request posts, **three sealed bids** seal into 🔒 chips, **atomic award** fires, payment (a demo voucher) counts up. Badge: **ON CANTON DEVNET**. | "A buyer agent posts a request. Three built-in provider agents submit sealed bids — each price sealed. The buyer awards the lowest in **one atomic Canton transaction**: losers archived, winner paid a demo voucher, settlement recorded. This just committed to the Canton devnet." | Badge reads **DEMO FALLBACK**; say "the live validator dropped — this next part is a labeled simulation, not the ledger." |
+| **1:30–2:10** The proof | Switch persona: **Public** (all sealed) → losing **Provider** (only its own bid) → **Buyer** (all) → **Auditor** (settlement + amount visible, **bids frosted**). | "Don't trust the claim — switch the persona. The losing provider never sees a competitor's price. The auditor verifies the settlement and the amount paid but **never a single sealed bid**. Compliance without surveillance. Every field's visibility is read back from the devnet ledger — the UI *cannot* lie." | identical (visibility is data-driven in both modes) |
+| **2:10–2:40** Agent-to-agent (MCP) | Trigger `tacit_procure` from an external Claude agent (MCP); it settles as **its own Canton party**. Show the default buyer's history via `tacit_my_deals` — that deal is **absent**. | "A genuinely external AI agent transacts through Tacit as its own Canton party. Claude runs a private procurement — and the default buyer can't even see it happened." | run against the live app if reachable; otherwise narrate |
+| **2:40–2:55** Undeniable | In the Lens, the active persona shows its **real party id** ("on Canton as `Tacit43kfBuyer::1220a14ca128…`"); **copy the full settlement contract id** from the settlement card. | "Here's the real devnet party fingerprint, and the real settlement contract id. Verify it yourself — `preflight-e2e --require-ledger` against our live URL settles a fresh deal and prints the id." | skip the copy; show `docs/DEVNET_EVIDENCE.md` instead |
+| **2:55–3:00** Close | Landing close / wordmark. | "Tacit. The private economy for AI agents. Live on the Canton devnet." | — |
 
-**What makes this win:** almost every submission will show a localhost mock and *say* "runs on Canton." This shows a **real contract id resolving on a real Canton participant** plus a **persona switch that proves ledger-enforced privacy** — the two things that are hard to fake and easy for a judge to verify.
+**What makes this win:** almost every submission shows a localhost mock and *says* "runs on Canton." This shows a **real contract id on the real Canton devnet** plus a **persona switch that proves ledger-enforced privacy** — the two things that are hard to fake and easy for a judge to verify (`curl /api/health` → `mode:devnet`, then `preflight-e2e --require-ledger`).

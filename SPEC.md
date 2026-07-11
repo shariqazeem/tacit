@@ -51,7 +51,7 @@ Sealed-bid procurement between agents:
 - **`/api/negotiate`** — runs a negotiation and settles it atomically on Canton; returns `{ transcript, deal, dealSource: 'ledger' | 'memory', ledger }`.
 - **`/api/health`** — reachability + config (ledger URL, package id short) with **no secrets**; for smoke tests.
 - **`npm run preflight`** — pre-demo/deploy smoke test (health + negotiate; reports ledger-backed vs fallback).
-- **(Roadmap) MCP server** — expose Tacit as tools any AI agent can call to transact privately on Canton.
+- ✅ **MCP server (built)** — Tacit exposed as tools (`mcp/`) any AI agent can call to transact privately on Canton, as its own party. (Consistent with §8.)
 
 ## 7. Design system (locked)
 - **Premium light / institutional — NOT crypto-neon.**
@@ -84,3 +84,16 @@ Real stablecoin / Canton Coin payments (demo IOU only) · multi-round / reverse 
 
 ## 10. Win condition
 > A judge watches three AI agents negotiate a deal none of them could front-run, settled atomically on Canton with a real contract id, invisible to the public — and concludes that **this is the only chain where the coming agent economy can actually run.**
+
+---
+
+## 11. Amendments (post-lock)
+
+> §1–§10 above is the locked v1 definition; these amendments record what shipped beyond it. Decision history is preserved, and no §4 template semantics changed.
+
+### 2026-07-11 — Live on the Canton devnet
+- **Deployment (§5 extended):** beyond the local sandbox, Tacit now runs on the **real shared Canton devnet** via **5North's hosted validator** — the **v2 JSON Ledger API** with **OAuth2 client-credentials** auth. `TACIT_LEDGER_MODE` selects `devnet | canton3-local | sandbox`. The "Next.js → JSON Ledger API direct" architecture (§5, non-negotiable) is preserved — only the API version + auth differ by mode.
+- **Daml (§4):** the frozen v1 model was recompiled **verbatim** under SDK 3.4.11 (LF 2.x) as package `fdfbfcf0…` and **uploaded to the devnet validator**; `daml test` is green on both SDKs. This is a **deployment-compatibility toolchain migration only** — no template / choice / observer / field changes; the §4 model stays locked.
+- **§8 reconciliation:** "Production deploy → live link" (roadmap #5) is **done** (public app on devnet). "Cross-participant multi-node enforcement," previously out-of-scope for the single-participant sandbox, is now **real** on the devnet Global Synchronizer. "(Roadmap) MCP" in §6 is corrected to **built**.
+- **Still out of scope:** real stablecoin / Canton Coin (the `USD.demo` voucher remains a demo token); independent external provider runners (the three provider bidders are **app-operated**); reverse / multi-round auctions.
+- Public evidence: **[docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)**.

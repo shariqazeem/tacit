@@ -1,119 +1,147 @@
-# Tacit
+# Tacit — the private economy for AI agents
 
-> **The private economy for AI agents.** Agents already buy data, compute, and services from each other. On a transparent chain, every deal broadcasts your prices and partners. **Tacit** settles agent commerce privately on **Canton** — agents negotiate via sealed bids, the buyer awards *and pays* the winner atomically in one Daml transaction, and **the ledger itself** controls who can see what.
+**Tacit lets AI agents buy and sell services from each other with sealed-bid privacy and atomic settlement on Canton — the ledger itself decides who sees what, so no agent can front-run another's price.**
 
-`Canton` · `Daml` · `Next.js 15` · `TypeScript`
+`Canton devnet` · `Daml 3.4.11` · `v2 JSON Ledger API + OAuth2` · `Next.js 15 / React 19 / TypeScript` · `MCP`
 
-Two routes: **`/`** — a scroll-driven product story. **`/lens`** — the live product (watch a negotiation settle, then switch personas to see the ledger-enforced privacy).
+> 🟢 **Live on the real Canton devnet.** Not a sandbox, not a mock. The full app settles real deals through **5North's hosted validator on the Canton Global Synchronizer**, with real contract ids.
+
+- **Live app:** **http://80.225.209.190:3200** — `/` (product story) · `/lens` (watch a deal settle, then switch personas to see the ledger-enforced privacy). *(HTTP-only.)*
+- **Live proof:** `curl http://80.225.209.190:3200/api/health` → `"mode":"devnet","reachable":true`. Full evidence: **[docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)**.
+
+### Verify it's real in ~60–90 seconds
+```bash
+# 1) the deployed app is in devnet mode (not a sandbox, not fallback):
+curl -s http://80.225.209.190:3200/api/health          # → "mode":"devnet", our package fdfbfcf0…
+
+# 2) settle a real deal on devnet and prove all 11 privacy invariants:
+APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger
+#   → prints every invariant + a fresh EVIDENCE block (real settlement id, IOU id, winner, amount).
+#   --require-ledger EXITS NON-ZERO on DEMO FALLBACK, so a pass proves a ledger-backed devnet settlement.
+```
 
 ---
 
 ## The problem
-AI agents are about to transact at scale — buying data, compute, and services from one another. On a transparent chain, every agent payment broadcasts your prices, counterparties, and margins to competitors. That's a non-starter for real business.
+AI agents are becoming economic actors — buying data, compute, and services from one another at scale. On a transparent chain, **every agent payment broadcasts your prices, counterparties, and margins to competitors.** That's a non-starter for real business. The coming agent economy needs a settlement layer that is **private *and* atomic**.
 
 ## What Tacit does
-Tacit runs agent-to-agent commerce on Canton, where **privacy is enforced by the ledger, not by application code**:
+Sealed-bid procurement between agents, where **privacy is enforced by the ledger, not by application code**:
 
-- A **buyer agent** posts a request for a service.
-- Three **provider agents** submit **sealed bids** — each price is visible only to that provider and the buyer; competing providers cannot see it.
-- The buyer **awards the lowest bid atomically**: one Daml transaction archives the losing bids, accepts the winner, **transfers a demo IOU (`USD.demo` voucher) to the winning provider**, creates the settlement, and closes the auction — all-or-nothing.
-- The **Ledger Lens** lets you switch perspective (Public · Buyer · Provider A/B/C · **Auditor**) and watch — field by field — exactly what Canton reveals to each party. The payment is visible only to the buyer and the winner; losers and the public see a frosted `PRIVATE`. The visibility on screen is read back from the live ledger.
-- A permissioned **Auditor** observes the request + the settlement (winner, price, amount paid) but is **never** a stakeholder of a sealed bid or an IOU — so it verifies *what settled* without seeing a single bid or any provider's wealth. **Compliance without surveillance.** Deals also carry their **title + category on-ledger**.
+1. A **buyer agent** posts a request for a service (with a budget).
+2. Three **provider agents** submit **sealed bids** — each price is visible only to that provider and the buyer; competitors cannot see it.
+3. The buyer **awards the lowest bid atomically** — one Daml transaction archives the losers, accepts the winner, **transfers a `USD.demo` voucher to the winner**, creates the settlement (recording the amount paid), and closes the auction. All-or-nothing.
+4. The **Ledger Lens** (`/lens`) lets you switch perspective — **Public · Buyer · Provider A/B/C · Auditor** — and see, field by field, exactly what Canton reveals to each party. Every field's visibility is **read back from live per-party devnet queries**, so the UI cannot lie.
+5. A permissioned **Auditor** verifies every settlement (winner, price, amount paid) but is **never** a stakeholder of a sealed bid or an IOU — compliance without surveillance.
 
-> The transferred value is a **demo voucher (`USD.demo`)**, deliberately not a stablecoin — real stablecoin settlement is the next roadmap step.
-
-## Why Canton
-- **Sub-transaction privacy** — a `SealedBid` is signed by its provider with the buyer as the *only* observer, so the ledger hides each price from competitors. That one line is the moat.
-- **Atomic multi-party settlement _with payment_** — the award is a single Daml `choice` (`Rfs.Award`): reject losers + accept winner + **transfer the IOU to the winner** + create the `Settlement` (recording the amount paid) + close the RFS, all-or-nothing, guaranteed by the ledger. Value moves *inside* the same transaction as the award.
-
-## The demo — `/lens`
-Idle hero → a live negotiation plays out → the **Ledger Lens** reveals the deal with a **real Canton settlement contract id**. Switch personas to see each sealed bid frosted for competitors, visible for the buyer, and hidden from the public. A top-right badge shows **ON CANTON** (live ledger) vs **DEMO FALLBACK** (deterministic offline simulation), so the demo is always honest about its source.
-
-## How it works
-`Next.js → Daml JSON Ledger API → Canton.` The negotiation route writes `Rfs` + `SealedBid` ×3, exercises `Rfs.Award`, then reads the deal back **as each party**, so the Lens's `visibleTo` is *derived from the ledger*. Agents price bids via an LLM with a deterministic fallback, so the demo never hangs.
-
-**Full architecture, run guide, and demo checklist → [CURRENT_STATE.md](CURRENT_STATE.md).**
-
-## Run it
-Prereqs: JDK 17, Daml SDK 2.10.4, Node. (More detail in [CURRENT_STATE.md §6](CURRENT_STATE.md).)
-
-```bash
-# 0) toolchain on PATH
-export PATH="/opt/homebrew/opt/openjdk@17/bin:$HOME/.daml/bin:$PATH"; export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
-
-# 1) build the DAR (this mints the package id) + prove the model
-cd daml && daml build && daml test && cd ..        # daml test → ok, 2 active contracts, 10 transactions
-
-# 2) start the local Canton stack with the new DAR
-daml sandbox  --dar daml/.daml/dist/tacit-0.1.0.dar --port 6865 --port-file /tmp/sandbox-port.txt --wall-clock-time &
-daml json-api --ledger-host localhost --ledger-port 6865 --http-port 7575 --allow-insecure-tokens &
-
-# 3) run the app, pinned to the DAR's package id
-npm install && npm run build
-TACIT_PACKAGE_ID=c0f7a95e01d57cc04dd72478d7886b98556d0831956767ac8e84f42b664bde1a PORT=3000 npm start
-#   → http://localhost:3000/       (landing)
-#   → http://localhost:3000/lens   (live product)
-
-# 4) smoke test — expect "LEDGER-backed" + "PAYMENT VERIFIED"
-APP_URL=http://localhost:3000 npm run preflight
-```
-
-> **Rebuilt the DAR?** `daml build` mints a **new** package id. Update `TACIT_PACKAGE_ID` (and the hardcoded default in `app/lens/ledger/client.ts`), then restart the sandbox with the new DAR. `/api/health` shows the active short id and whether it came from the env. The current default is `c0f7a95e…`.
->
-> No ledger running? The app still works in a clearly-labeled **DEMO FALLBACK** mode (deterministic, in-memory, **no payment** — nothing claims value moved).
-
-## Screenshots
-<!-- TODO: add after recording the demo -->
-- [ ] `/` — hero (the private economy for AI agents)
-- [ ] `/` — the mechanic (sealed bids → award → paid)
-- [ ] `/lens` — the reveal with the `VALUE TRANSFERRED` receipt + real IOU contract id
-- [ ] `/lens` — persona proof (Provider A: own bid visible, competitors + payment frosted)
-- [ ] 3-min walkthrough video
-
-## MCP — use Tacit from any AI agent
-Tacit ships an **MCP server** ([`mcp/`](mcp/)) so any MCP-capable agent (Claude Code, Claude Desktop, …) can run a **private sealed-bid procurement on Canton** and get real contract ids back. It is a **thin client** of the app's HTTP API — one source of truth.
-
-Tools: **`tacit_health`** · **`tacit_procure`** `{ description, maxBudget, buyerName? }` (run a private procurement **as your own Canton party**, award & pay the winner atomically, return the settlement + IOU ids — **ON CANTON** vs **SIMULATION**) · **`tacit_my_deals`** `{ buyerName }` (audit *your* deal history — you see only what your party is a stakeholder of; another agent's deals are invisible) · **`tacit_explain_privacy`**. `tacit_procure` + `tacit_my_deals` also return `structuredContent` so agents can branch without parsing prose.
-
-```bash
-npm run mcp:build                       # installs deps + builds mcp/dist/server.js
-# with the Tacit app running (default http://localhost:3100):
-claude mcp add tacit -- node "$(pwd)/mcp/dist/server.js"
-```
-Or open this repo in Claude Code — the checked-in [`.mcp.json`](.mcp.json) registers it automatically (`/mcp` to approve + list). Details + a `claude_desktop_config.json` example in [mcp/README.md](mcp/README.md).
-
-**Sample transcript (live ledger):**
-```
-tacit_procure({ description: "Competitive analysis of three DeFi lending protocols", maxBudget: 120 })
-
-PROCUREMENT — Competitive analysis of three DeFi lending protocols
-Budget < $120 · 3 sealed bids received
-
-✅ ON CANTON — awarded and paid in one atomic Daml transaction ...
-Winner: Provider C at $67
-Settlement contract: 00a55dec0106e7b8…d818acce6b8d
-Payment: 67 USD.demo transferred to the winner — IOU contract 00fe47e324e0b656…3e76ecf7
-
-Sealed bids: each losing provider never saw competitors' prices — enforced by
-Canton's signatory/observer model, not by application code.
-View this deal in the Ledger Lens: http://localhost:3100/lens
-```
-
-## A real economy on the ledger
-- **Agents that reason** — when an LLM key is set (`GRADIENT_API_KEY`), each provider gets ONE structured call with its OWN private cost model for the inferred service category (research/data/compute/creative) plus its ledger balance, and bids accordingly (prices clamped to a sane band; any failure → its deterministic fallback). No key → the deterministic multipliers, unchanged. The `/lens` theater shows an **LLM AGENTS** chip only when a real model produced the bids.
-- **Ledger-persistent wealth** — provider "wealth" is the sum of the demo IOUs each provider actually **owns** on the ledger. Run a deal and the winner's balance grows *by exactly the price*. `GET /api/economy` returns it (live-queried, `available:false` when Canton is down); the `/lens` economy strip and the landing stats surface it.
-- **Agent-to-agent privacy** — an external agent settles as its **own Canton party** (`buyerName`). Its deal is invisible to every other party:
-```
-tacit_my_deals({ buyerName: "JudgeAgent" })  → 1 settlement (Provider C · $50 · 00ae38ad8f20…)
-tacit_my_deals({ buyerName: "Buyer" })       → 5 OTHER settlements — JudgeAgent's deal is NOT among them
-```
-The ledger, not the app, decides who can see what.
-
-## Tech
-Daml 2.10 on Canton (sandbox + JSON Ledger API) · Next.js 15 / React 19 / TypeScript / Tailwind · MCP via `@modelcontextprotocol/sdk`.
-
-## Hackathon
-Built for the **Canton Foundation** hackathon — tracks: *Private DeFi & Capital Markets* and *Payments, Neobanking & Agentic Commerce*.
+## Why Canton is load-bearing
+- **Sub-transaction privacy is a property of the ledger.** A `SealedBid` is signed by its provider with the buyer as the *only* observer, so Canton **never returns the contract to a competitor.** That single signatory/observer line is the moat — no application code enforces it, so no application bug can break it.
+- **Atomic multi-party settlement with payment.** The award is one Daml `choice` (`Rfs.Award`): reject losers + accept winner + transfer the IOU + create the `Settlement` + close the RFS — all-or-nothing, guaranteed by the ledger. On a transparent chain you'd get privacy *or* atomic composition; Canton gives both.
 
 ---
-*Privacy is enforced by the ledger — see it for yourself in the Ledger Lens.*
+
+## Real vs Simulated vs Roadmap
+| Capability | Status |
+|---|---|
+| Runs on the **real shared Canton devnet** (5North validator + Global Synchronizer) | ✅ **Real** |
+| Ledger-enforced sealed-bid privacy (per-party read-back) | ✅ **Real** |
+| Atomic award (`Rfs.Award`) — one Daml transaction | ✅ **Real** |
+| `USD.demo` value transfer inside that transaction | ✅ **Real transfer** — but of a **demo voucher**, see below |
+| Auditor persona (sees settlements, never bids/IOUs) | ✅ **Real** |
+| MCP: external agent transacts as its **own** Canton party | ✅ **Real** |
+| Our Daml DAR deployed on devnet (`fdfbfcf0…`) | ✅ **Real** |
+| The **three provider bidders** | 🟡 **App-operated** — run inside the app (deterministic, or LLM-assisted). *Not* independent external services. |
+| `USD.demo` payment token | 🟡 **Demo voucher** — self-issued by the buyer. *Not* real money, a stablecoin, or Canton Coin. |
+| DEMO FALLBACK mode (ledger unreachable) | 🟡 **Simulated** — deterministic, in-memory, **clearly labeled**, and it never claims value moved. |
+| Stablecoin / Canton Coin settlement | 🔜 Roadmap |
+| Independent provider runners + real service fulfillment + delivery receipt | 🔜 Roadmap |
+
+## Devnet architecture (exact)
+```
+Browser ─▶ Next.js app ─▶ cantonV2 adapter ─▶ 5North devnet validator ─▶ Canton Global Synchronizer
+           / and /lens     OAuth2 + v2 JSON        (v2 JSON Ledger API)        (shared devnet)
+                           Ledger API
+```
+- **Auth:** OAuth2 **client-credentials** → the validator's **v2 JSON Ledger API** (Bearer JWT, `daml_ledger_api` scope, 8h TTL; the adapter caches + refreshes on 401). **The client secret is never in this repo** — it lives in the 5North access PDF and the server's private env file.
+- **The app is a thin ledger client.** One `TACIT_LEDGER_MODE` env selects the target: `devnet` (live), `canton3-local` (Splice LocalNet — real Canton 3.x, dev/insurance), or `sandbox` (Daml 2.x — the offline DEMO FALLBACK tier). Same app code for all three.
+- **Shared-validator specifics:** parties are pre-allocated with unique prefixes and **pinned** (the shared validator won't list parties), and the ledger-api user is granted `CanActAs` per party. See [DEPLOY.md](DEPLOY.md).
+
+## The atomic transaction
+`Rfs.Award(winningBid, losingBids, paymentCid)` — one consuming Daml choice, controller = buyer:
+1. validate the winning bid (right RFS, right buyer, within budget),
+2. `Reject` every losing `SealedBid` (archived),
+3. `Accept` the winner → verify the IOU covers the price → **`Transfer` the IOU to the winner** → create the `Settlement` (with `paid = Some (amount, "USD.demo")`),
+4. consume the `Rfs` (no double-award).
+If any step fails, the whole transaction rolls back — the losers stay open, no payment moves, no settlement exists. Value moves *inside the same transaction* as the award.
+
+## Privacy visibility matrix
+What each persona can see, **as enforced by the ledger** (✅ visible · 🔒 frosted `PRIVATE`):
+
+| Field | Public | Buyer | Provider A | Provider B | Provider C (winner) | Auditor |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| A deal exists / settled | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Request (title, budget) | 🔒 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Provider A's sealed price | 🔒 | ✅ | ✅ | 🔒 | 🔒 | 🔒 |
+| Provider C's sealed price | 🔒 | ✅ | 🔒 | 🔒 | ✅ | 🔒 |
+| Winner + settled amount | 🔒 | ✅ | 🔒 | 🔒 | ✅ | ✅ |
+| Payment IOU contract id | 🔒 | ✅ | 🔒 | 🔒 | ✅ | 🔒 |
+
+The **Auditor** sees the settlement and the amount paid, but **never a single sealed bid or the IOU** — it verifies *what settled* without seeing *how anyone bid* or *who holds what*.
+
+## The 11 live privacy invariants
+`scripts/preflight-e2e.mjs` settles a real deal on devnet and asserts all of these against per-party ledger reads (see [docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md) for the list + a passing run). A failure exits non-zero — we do not turn a failing check into a passing claim.
+
+## MCP — an external agent transacts as its own Canton party
+Tacit ships an **MCP server** ([`mcp/`](mcp/)) so any MCP-capable agent (Claude Code / Desktop) can run a **private sealed-bid procurement on Canton** as **its own party** and get real contract ids back. It's a thin client of the app's HTTP API. Tools: `tacit_health` · `tacit_procure` `{ description, maxBudget, buyerName? }` · `tacit_my_deals` `{ buyerName }` · `tacit_explain_privacy`. Agent-to-agent isolation is real: `tacit_my_deals` for one agent never returns another agent's deals — the ledger, not the app, decides who sees what.
+
+## Live public evidence (from a verification run — new ids each run)
+- **Package / DAR:** `fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff` (Daml 3.4.11, name `tacit`), uploaded to the devnet validator.
+- **Settlement contract:** `002b277491de20858b6d1ff8f583643027f2bca77c90d950e9e3accc39b9dc7055ca1212208474cc1018fe1008c5af3503934112e17cfd7e57b21572eb25c7ec6736684a39`
+- **Payment IOU contract:** `005beb3a90c5d3d706d45e09cc39b0e683cc21848a3186b175f56a3fd21238cad0ca121220ff8505ed4f738409f35c531adfd1d97de77039814e6e8d3066cded06a84c5fb2`
+- **Winner:** Provider C · **34 USD.demo** (demo voucher, not real currency).
+
+## Run it locally
+Prereqs: JDK 17, Daml SDK 2.10.4 **and** 3.4.11, Node 20+.
+```bash
+npm install
+npm run typecheck                 # tsc --noEmit
+npm run build                     # next build
+export PATH="/opt/homebrew/opt/openjdk@17/bin:$HOME/.daml/bin:$PATH"; export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+( cd daml && daml test )          # v1 model proof  → test ok (2/10), testAuditor ok (4/11)
+npm run daml:test:v2              # v2 model proof  → identical under Daml 3.4.11
+
+# Verify the LIVE devnet deployment (no local ledger needed):
+APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger
+```
+To run the app yourself against devnet you need the 5North OAuth creds (not in this repo) — see [DEPLOY.md](DEPLOY.md). Without a ledger, the app runs in clearly-labeled **DEMO FALLBACK** (deterministic, in-memory, no payment claimed).
+
+## Repository structure
+```
+app/
+  page.tsx · layout.tsx · globals.css        # the / landing (5-beat scroll story)
+  landing/                                    # Hero · Problem · Mechanic · Proof · Close
+  lens/                                       # the /lens product
+    components/  LensExperience · NegotiationTheater · LensView · PersonaSwitcher · SourceBadge · …
+    agents/      negotiation · profiles (private cost models) · llm
+    ledger/      client (facade) · adapters/{sandboxV1,cantonV2,config,types} · write · read · economy
+  api/           negotiate · economy · health
+daml/            Tacit/Sealed.daml (v1, SDK 2.10.4)         # frozen c0f7a95e…
+daml3/           Tacit/Sealed.daml (v2, SDK 3.4.11)         # frozen fdfbfcf0… (on devnet)
+daml3-test/      Tacit/Test.daml (v2 daml test)
+mcp/             MCP server (thin client of the app API)
+scripts/         preflight-e2e · devnet-bootstrap · canton3-smoke · canton3-local.sh · preflight
+docs/            DEVNET_EVIDENCE.md
+```
+
+## Docs
+- **[DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)** — public devnet proof (endpoints, contract ids, invariants, how to verify)
+- **[DEPLOY.md](DEPLOY.md)** — deployment + the three ledger modes
+- **[CURRENT_STATE.md](CURRENT_STATE.md)** — complete technical status (real vs demo, architecture, env, evidence)
+- **[DEMO_SCRIPT.md](DEMO_SCRIPT.md)** — 3-minute demo storyboard
+- **[SPEC.md](SPEC.md)** — locked product spec + amendments
+
+## Hackathon
+Built for the **Build on Canton Hackathon** (Encode Club).
+
+---
+*Privacy is enforced by the ledger — verify it for yourself in the Ledger Lens, or with `preflight-e2e --require-ledger`.*
