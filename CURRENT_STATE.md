@@ -56,7 +56,7 @@ It is a **new Daml package** (`tacit-work`, `9ab077f2…`) **data-dependent on t
   hosted-validator OAuth credential** — *not* separate validator operators. `USD.demo` is a demo
   voucher.
 - **Proof:** `npm run preflight:work` (`scripts/preflight-work-e2e.mjs --require-ledger
-  --require-runners`) — **28/28** invariants incl. a **tamper test** (one flipped byte → refused)
+  --require-runners`) — the full work invariant suite (see [docs/verification-manifest.json](docs/verification-manifest.json)) incl. a **tamper test** (one flipped byte → refused)
   and an **idempotent replay** (same settlement + receipt, no second payment). Live contract ids:
   **[docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md)**.
 - **Buyer endpoint:** `POST /api/work/procure` (devnet/real-runner only; **no fallback**, a failure

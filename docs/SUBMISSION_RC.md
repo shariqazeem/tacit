@@ -1,5 +1,32 @@
 # Tacit — submission release candidate
 
+## submission-rc2 — agentic vendor-security product (2026-07-12)
+
+Tacit is now **a private work exchange for software agents, launching with vendor
+security.** An external MCP agent (or the `/work` UI) hires three competing provider
+agents; the winner performs a **real passive vendor-security assessment**; the buyer
+verifies (hash + schema + target + score) and a deterministic policy decides; an
+auditor gets the receipt, not the report. Frozen Daml packages unchanged.
+
+- **Live:** https://tacit.80-225-209-190.sslip.io/work · MCP `tacit_assess_vendor`.
+- **Proven live on devnet (through HTTPS):** agentic vendor e2e **35/35** + original
+  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (96 assertions across 6 suites).
+- **Fresh live evidence (example.com):** real TLSv1.3 / Cloudflare cert / 48d · score
+  59 "weak" · 8 findings · policy `standard-saas-v1` → **human_review** (score:59) ·
+  winner providerC @ 20.77 USD.demo · `providerCommittedSha256 == buyerComputedSha256`
+  `4145de81…` · settlement `00897135…` · receipt `005fd6e9…`.
+- **Verify:** `APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-agentic.mjs --require-ledger --require-runners`.
+- **New since rc1:** registered-service registry (`shared/services.ts`), real
+  `vendor_security_assessment` adapter (passive, SSRF-hard, IP-pinned), autonomous
+  provider dispatch, buyer acceptance hardening + deterministic policy engine, MCP
+  `tacit_list_services`/`tacit_assess_vendor`, agentic `/work` + landing, read-only
+  ledger-derived `/api/work/status`. Honest limitations below still apply; `site_audit`
+  retained for resumption only.
+
+---
+
+
+
 **Cut:** 2026-07-12 (UTC) · **tag:** `submission-rc1` (on `main`) · **prior product tag:** `work-phase1b-product`
 
 Judge-operable, HTTPS, live on the real Canton devnet. This document is the single
