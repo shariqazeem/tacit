@@ -323,8 +323,8 @@ function ManualPane({ health, url, setUrl, budget, setBudget, serviceType, choos
       </div>
       {!httpsOk && <div className="mt-1.5" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12 }}>Enter an https:// URL.</div>}
       <div className="mt-4">
-        <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Onboarding policy</span>
-        <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="Onboarding policy">
+        <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>{meta.policyLabel}</span>
+        <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label={meta.policyLabel}>
           {policies.map((pol: any) => (
             <button key={pol.id} role="radio" aria-checked={policyId === pol.id} onClick={() => setPolicyId(pol.id)} title={pol.hint}
               className="rounded-full px-3.5 py-1.5" style={{ fontFamily: FONT.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', color: policyId === pol.id ? '#fff' : C.ink2, background: policyId === pol.id ? C.ink : C.surface, border: `1px solid ${policyId === pol.id ? C.ink : C.hairline}` }}>{pol.label}</button>
@@ -340,7 +340,7 @@ function ManualPane({ health, url, setUrl, budget, setBudget, serviceType, choos
       </div>
       <div className="mt-5">
         <motion.button type="button" onClick={onRunManual} disabled={!canRun} whileHover={canRun ? { y: -1 } : undefined} whileTap={canRun ? { scale: 0.99 } : undefined}
-          className="rounded-full px-6 py-3" style={{ background: canRun ? C.ink : 'rgba(10,10,11,0.28)', color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: canRun ? 'pointer' : 'not-allowed' }}>Assess this vendor →</motion.button>
+          className="rounded-full px-6 py-3" style={{ background: canRun ? C.ink : 'rgba(10,10,11,0.28)', color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: canRun ? 'pointer' : 'not-allowed' }}>{meta.ctaLabel}</motion.button>
       </div>
       {!ready && <div className="mt-3" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>{health ? `Not ready — ${health.reason}. Refreshing…` : 'Checking the provider network…'}</div>}
     </Card>
