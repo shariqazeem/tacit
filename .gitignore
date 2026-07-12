@@ -55,3 +55,6 @@ p2p.key
 /logs/
 /log/
 *.log
+
+# preview launch config (session-specific paths)
+.claude/launch.json
