@@ -1,12 +1,15 @@
 # Tacit — Complete Current State (submission-rc2)
 
-> **Tacit is a private work exchange for software agents on Canton, launching with vendor security.**
+> **Tacit is a private work exchange for software agents on Canton — now a two-market exchange.**
 > A procurement agent privately hires three competing provider agents; the winner performs a **real,
-> passive vendor web-security assessment**; the findings stay private to the buyer; the buyer verifies
-> the delivery and a deterministic policy produces an onboarding decision; and a permissioned auditor
-> receives a receipt — **never** the report.
+> passive** assessment — either a **vendor web-security posture** or a **web-performance probe**; the
+> findings stay private to the buyer; the buyer verifies the delivery (hash + schema + binding +
+> **score-recompute**) and a **service-scoped deterministic policy** produces a decision; and a
+> permissioned auditor receives a receipt — **never** the report. The second market was added with
+> **zero Daml changes and zero new runtime dependencies** — both services ride the same frozen
+> `tacit-work` template, differing only in `serviceType` / `serviceInput` / `reportJson`.
 
-- **Repo:** https://github.com/shariqazeem/tacit · **main:** `da19ad9` · **tag:** `submission-rc2`
+- **Repo:** https://github.com/shariqazeem/tacit · **main:** `1a4c11f` (perf pass on `main`) · **prior tag:** `submission-rc2`
 - **Live (HTTPS):** https://tacit.80-225-209-190.sslip.io — `/work` (the product) · `/lens` (privacy explorer)
 - **Built for:** Build on Canton Hackathon (Encode Club). Last updated **2026-07-12**.
 - **Frozen Daml packages (never modified):** core `tacit` = `fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff` · work `tacit-work` = `9ab077f2392651a0a10df2233440570b11a7556a27fc4de31db3e775ae0ed0ed`
@@ -24,9 +27,27 @@ work path** — a failure is a clear non-200 / MCP error / visible error state.
 Honestly disclosed limitations: the three runners share **one** hosted-validator OAuth credential
 (not separate validators/organizations); `USD.demo` is a **demo voucher** (not money/stablecoin/Canton
 Coin); the buyer acts through a **pinned** party (a `buyerLabel` is display-only); hash/schema/target/
-score verification is **buyer-side, off-ledger** (Canton does not verify report correctness); the
-assessment is a **passive pre-screen** (not a pentest/certification); `vendor_security_assessment` is
-the only production adapter (`site_audit` retained for legacy resumption).
+score verification is **buyer-side, off-ledger** (Canton does not verify report correctness); each
+service is a **passive pre-screen** (the security service is not a pentest/certification; the
+performance service is not a load test or availability guarantee); **two production adapters** ship —
+`vendor_security_assessment` and `web_performance_probe` — with `site_audit` retained for legacy
+resumption.
+
+### 0b. Second service — `web_performance_probe` (new market, zero Daml changes)
+
+The winner resolves the target with **SSRF-hard, IP-pinned** networking, negotiates the HTTP version
+via **ALPN**, and takes **5 timed samples** (connect / TLS / TTFB / total, byte-capped) over fresh
+sockets. The report carries per-sample numbers, min/median/max aggregates, transfer + caching posture,
+redirect chain, findings, and a banded score (`fast`/`moderate`/`slow`/`poor`). The **score is a pure
+function of the report** — every point is a line in `scoringBreakdown`, and on acceptance the buyer
+**recomputes the score from that breakdown** and rejects any mismatch, exactly as it re-hashes the
+committed bytes. Timings are honest and vary; the score does not. Policies are **service-scoped**
+(`latency-slo-standard-v1` / `latency-slo-strict-v1`); `evaluatePolicy` dispatches by `report.service`
+and a cross-service policy is a precise error. Buyer surfaces: the `/work` **service selector**
+(vendor | performance) with a perf `PerformanceSection`, the **agent planner** (picks the service by
+intent), and MCP `tacit_probe_performance` (v0.5.0). **No LLM anywhere** in measurement, scoring, or
+policy. Proven live on devnet against `example.com`: HTTP/2, median TTFB ~452 ms, band `fast`, score
+100, policy → `approve`, buyer re-hash == provider commitment.
 
 ---
 
