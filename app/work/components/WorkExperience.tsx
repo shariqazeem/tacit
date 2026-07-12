@@ -6,11 +6,11 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { C, FONT } from '../../lens/components/theme';
 import { Card, CopyId, Row, SectionTitle, StatChip } from './bits';
 import { WorkResultView } from './WorkResult';
-import { POLICY_META, type RunnerHealth, type StoredRun, type WorkHealth, type WorkPhase, type WorkResult } from '../types';
+import { POLICY_BY_SERVICE, POLICY_META, SERVICE_META, SERVICE_ORDER, type RunnerHealth, type StoredRun, type WorkHealth, type WorkPhase, type WorkResult } from '../types';
 
 const STORE_KEY = 'tacit.work.lastRun';
 const PROCURE_TIMEOUT_MS = 150_000;
-const SERVICE = 'vendor_security_assessment';
+const DEFAULT_SVC = 'vendor_security_assessment';
 
 const newJobId = () => `vjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -48,7 +48,10 @@ export function WorkExperience() {
   const [planError, setPlanError] = useState('');
   const [url, setUrl] = useState('https://example.com');
   const [budget, setBudget] = useState(25);
+  const [serviceType, setServiceType] = useState(DEFAULT_SVC);
   const [policyId, setPolicyId] = useState('standard-saas-v1');
+  // Switch service → reset the policy to that service's first option.
+  const chooseService = useCallback((s: string) => { setServiceType(s); setPolicyId(POLICY_BY_SERVICE[s]?.[0]?.id || ''); }, []);
   const [jobId, setJobId] = useState('');
   const [result, setResult] = useState<WorkResult | null>(null);
   const [brief, setBrief] = useState<string | null>(null);
@@ -65,7 +68,7 @@ export function WorkExperience() {
       const r = await fetch('/api/work/health', { cache: 'no-store' });
       setHealth(await r.json());
     } catch {
-      setHealth({ ok: false, schema: 2, mode: 'unknown', ledgerReachable: false, corePackage: { name: 'tacit', shortId: '' }, workPackage: { name: 'tacit-work', shortId: '' }, runners: [], distinctInstances: false, distinctProcesses: false, serviceQuorum: {}, launchService: SERVICE, launchReady: false, reason: 'work health unreachable' });
+      setHealth({ ok: false, schema: 2, mode: 'unknown', ledgerReachable: false, corePackage: { name: 'tacit', shortId: '' }, workPackage: { name: 'tacit-work', shortId: '' }, runners: [], distinctInstances: false, distinctProcesses: false, serviceQuorum: {}, launchService: DEFAULT_SVC, launchReady: false, reason: 'work health unreachable' });
     }
   }, []);
 
@@ -118,7 +121,7 @@ export function WorkExperience() {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), PROCURE_TIMEOUT_MS);
     try {
-      const r = await fetch('/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType: SERVICE, input: { url }, maxBudget: budget, policyId, requestSource: source, buyerName: 'Judge-Agent' }), signal: ctrl.signal });
+      const r = await fetch('/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType, input: { url }, maxBudget: budget, policyId, requestSource: source, buyerName: 'Judge-Agent' }), signal: ctrl.signal });
       const data = await r.json();
       stopPoll();
       if (!r.ok || !data?.ok) { setError(String(data?.error || `request failed (HTTP ${r.status})`)); setPhase('error'); return; }
@@ -135,7 +138,7 @@ export function WorkExperience() {
       setError(aborted ? 'The request timed out in the browser — the ledger job may still have completed.' : String(e?.message || e));
       setPhase('error');
     } finally { clearTimeout(timer); }
-  }, [url, budget, policyId, health]);
+  }, [url, budget, policyId, serviceType, health]);
 
   const plan = useCallback(async () => {
     if (goalText.trim().length < 4) return;
@@ -145,7 +148,7 @@ export function WorkExperience() {
       const j = await r.json();
       if (j?.ok && j.proposal) {
         setProposal(j.proposal);
-        setUrl(j.proposal.input.url); setBudget(j.proposal.maxBudget); setPolicyId(j.proposal.policyId);
+        setUrl(j.proposal.input.url); setBudget(j.proposal.maxBudget); setServiceType(j.proposal.serviceType); setPolicyId(j.proposal.policyId);
         setAgentStep('mandate');
       } else {
         setPlanError(String(j?.reason || 'the planner could not produce a mandate')); setAgentStep('compose');
@@ -177,13 +180,13 @@ export function WorkExperience() {
           agentStep={agentStep} goalText={goalText} setGoalText={setGoalText} onPlan={plan} planError={planError}
           proposal={proposal}
           onApprove={() => run(undefined, 'console')}
-          onEditManual={() => { if (proposal) { setUrl(proposal.input.url); setBudget(proposal.maxBudget); setPolicyId(proposal.policyId); } setMode('manual'); setAgentStep('compose'); }}
+          onEditManual={() => { if (proposal) { setUrl(proposal.input.url); setBudget(proposal.maxBudget); setServiceType(proposal.serviceType); setPolicyId(proposal.policyId); } setMode('manual'); setAgentStep('compose'); }}
           onRestartAgent={() => { setAgentStep('compose'); setProposal(null); }}
-          url={url} setUrl={setUrl} budget={budget} setBudget={setBudget} policyId={policyId} setPolicyId={setPolicyId}
+          url={url} setUrl={setUrl} budget={budget} setBudget={setBudget} serviceType={serviceType} chooseService={chooseService} policyId={policyId} setPolicyId={setPolicyId}
           onRunManual={() => run(undefined, 'browser')}
         />
       )}
-      {phase === 'running' && <RunningView elapsed={elapsed} runners={runnersAtRun.current} url={url} stages={stages} reduce={!!reduce} />}
+      {phase === 'running' && <RunningView elapsed={elapsed} runners={runnersAtRun.current} url={url} stages={stages} reduce={!!reduce} serviceType={serviceType} />}
       {phase === 'success' && result && (
         <div>
           {restored && <RestoredBanner />}
@@ -200,19 +203,20 @@ export function WorkExperience() {
 
 // ── idle: Agent console (default) + Manual form ─────────────────────────────
 function ConsoleIdle(p: any) {
-  const { reduce, health, mode, setMode } = p;
-  const ready = !!health?.launchReady;
-  const online = health?.serviceQuorum?.[SERVICE]?.supported ?? 0;
+  const { reduce, health, mode, setMode, serviceType } = p;
+  const q = health?.serviceQuorum?.[serviceType];
+  const ready = !!health?.ledgerReachable && (q?.quorum ?? false);
+  const online = q?.supported ?? 0;
   return (
     <motion.div initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11.5, letterSpacing: '0.16em', textTransform: 'uppercase' }}>Buyer agent console · Canton devnet</div>
       <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 'clamp(26px, 5vw, 40px)', fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.08 }}>Tell your procurement agent what you need.</h1>
-      <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>Describe the onboarding in plain English. The agent proposes a mandate you approve — then three provider agents bid privately, the winner assesses the vendor, and a deterministic policy decides. The agent never invents findings or prices.</p>
+      <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>Describe the work in plain English. The agent proposes a mandate you approve — then three provider agents bid privately, the winner performs the work, findings stay private, and a deterministic policy decides. The agent never invents findings or prices.</p>
 
       <div className="mt-6 flex flex-wrap gap-2">
         <StatChip label={health ? (health.ledgerReachable ? 'Canton devnet' : 'Canton unreachable') : 'Checking…'} tone={health?.ledgerReachable ? 'live' : 'warn'} />
         <StatChip label={`${online}/3 capable agents`} tone={online >= 3 ? 'live' : 'warn'} />
-        <StatChip label="vendor_security_assessment v1" tone={ready ? 'live' : 'neutral'} />
+        <StatChip label={`${SERVICE_META[serviceType]?.label ?? serviceType}`} tone={ready ? 'live' : 'neutral'} />
       </div>
 
       {/* tabs */}
@@ -264,7 +268,7 @@ function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: an
     <Card style={{ marginTop: 16, borderColor: 'rgba(124,58,237,0.28)' }}>
       <SectionTitle kicker="proposed mandate — approve to proceed">Your agent proposes</SectionTitle>
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-        <Row label="Service">Vendor security assessment</Row>
+        <Row label="Service">{SERVICE_META[proposal.serviceType]?.label ?? proposal.serviceType}</Row>
         <Row label="Target" mono>{proposal.input.url}</Row>
         <Row label="Policy">{policyLabel}</Row>
         <Row label="Max budget" mono>{proposal.maxBudget} <span style={{ color: C.ink3 }}>demo credits — devnet voucher</span></Row>
@@ -291,12 +295,27 @@ function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: an
   );
 }
 
-function ManualPane({ health, url, setUrl, budget, setBudget, policyId, setPolicyId, onRunManual, ready }: any) {
+function ManualPane({ health, url, setUrl, budget, setBudget, serviceType, chooseService, policyId, setPolicyId, onRunManual, ready }: any) {
   const httpsOk = /^https:\/\//i.test(url.trim());
   const canRun = ready && httpsOk && budget > 0;
+  const meta = SERVICE_META[serviceType] || SERVICE_META[DEFAULT_SVC];
+  const policies = POLICY_BY_SERVICE[serviceType] || [];
   return (
     <Card style={{ marginTop: 16 }}>
-      <label htmlFor="w-url" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Vendor / API / MCP endpoint</label>
+      <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Service</span>
+      <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="Service">
+        {SERVICE_ORDER.map((sid: string) => {
+          const avail = health?.serviceQuorum?.[sid]?.quorum ?? false;
+          return (
+            <button key={sid} role="radio" aria-checked={serviceType === sid} onClick={() => chooseService(sid)} title={SERVICE_META[sid]?.scope}
+              className="rounded-full px-3.5 py-1.5" style={{ fontFamily: FONT.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', color: serviceType === sid ? '#fff' : C.ink2, background: serviceType === sid ? C.ink : C.surface, border: `1px solid ${serviceType === sid ? C.ink : C.hairline}` }}>
+              {SERVICE_META[sid]?.label ?? sid}{avail ? '' : ' · offline'}
+            </button>
+          );
+        })}
+      </div>
+
+      <label htmlFor="w-url" className="mt-4 block" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>{meta.inputLabel}</label>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <input id="w-url" type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://vendor.example.com" aria-invalid={!httpsOk}
           className="flex-1 rounded-xl px-3.5 py-2.5" style={{ minWidth: 220, background: C.bg, border: `1px solid ${httpsOk ? C.hairline : 'rgba(180,83,9,0.5)'}`, color: C.ink, fontFamily: FONT.mono, fontSize: 13.5, outlineColor: C.violet }} />
@@ -306,7 +325,7 @@ function ManualPane({ health, url, setUrl, budget, setBudget, policyId, setPolic
       <div className="mt-4">
         <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Onboarding policy</span>
         <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="Onboarding policy">
-          {POLICY_META.map((pol: any) => (
+          {policies.map((pol: any) => (
             <button key={pol.id} role="radio" aria-checked={policyId === pol.id} onClick={() => setPolicyId(pol.id)} title={pol.hint}
               className="rounded-full px-3.5 py-1.5" style={{ fontFamily: FONT.sans, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', color: policyId === pol.id ? '#fff' : C.ink2, background: policyId === pol.id ? C.ink : C.surface, border: `1px solid ${policyId === pol.id ? C.ink : C.hairline}` }}>{pol.label}</button>
           ))}
@@ -344,14 +363,15 @@ function ByoAgentFooter({ url, budget, policyId }: { url: string; budget: number
 }
 
 // ── running / success extras ────────────────────────────────────────────────
-function RunningView({ elapsed, runners, url, stages, reduce }: { elapsed: number; runners: RunnerHealth[]; url: string; stages: Record<string, boolean>; reduce: boolean }) {
+function RunningView({ elapsed, runners, url, stages, reduce, serviceType }: { elapsed: number; runners: RunnerHealth[]; url: string; stages: Record<string, boolean>; reduce: boolean; serviceType: string }) {
+  const svcLine = SERVICE_META[serviceType]?.runningLine || 'The winner is performing the work and delivering it through Canton.';
   const firstPending = STAGES.findIndex((s) => !stages[s.key]);
   const lastDone = [...STAGES].reverse().find((s) => stages[s.key]);
   const narration = lastDone ? NARRATION[lastDone.key] : 'I opened a private request and I\'m waiting for the provider agents to bid.';
   return (
     <div className="pt-4">
       <SectionTitle kicker="running on Canton">Your procurement agent is working</SectionTitle>
-      <p style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.6, maxWidth: '54ch' }}>Assessing <span style={{ fontFamily: FONT.mono, color: C.ink }}>{url}</span>. Three separate provider processes are bidding privately; the winner performs the assessment and delivers it through Canton. No fallback — nothing is fabricated while we wait.</p>
+      <p style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.6, maxWidth: '54ch' }}>Working on <span style={{ fontFamily: FONT.mono, color: C.ink }}>{url}</span>. Three separate provider processes are bidding privately; {svcLine} No fallback — nothing is fabricated while we wait.</p>
       <div aria-live="polite" className="mt-4 rounded-xl px-4 py-3" style={{ background: C.violetSoft, border: '1px solid rgba(124,58,237,0.2)' }}>
         <div className="flex items-center gap-2"><span aria-hidden style={{ color: C.violet }}>◆</span><span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Buyer agent</span></div>
         <div className="mt-1" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, lineHeight: 1.5 }}>{narration}</div>

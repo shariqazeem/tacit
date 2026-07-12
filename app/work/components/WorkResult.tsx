@@ -34,9 +34,76 @@ function DnsChip({ label, state }: { label: string; state: string }) {
   );
 }
 
+function PerfChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: C.surface, border: `1px solid ${C.hairline}`, fontFamily: FONT.mono, fontSize: 11, color: C.ink2 }}>
+      <span style={{ color: C.ink3 }}>{label}</span>{value}
+    </span>
+  );
+}
+
+function PerformanceSection({ r }: { r: any }) {
+  const bandTone = r.score.band === 'fast' ? C.live : r.score.band === 'moderate' ? C.violet : C.fallback;
+  const maxTtfb = Math.max(1, ...r.samples.map((s: any) => s.ttfbMs));
+  return (
+    <Card>
+      <SectionTitle kicker="bounded performance pre-screen">Private assessment</SectionTitle>
+      <div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
+        <Row label="HTTP version" mono>{r.protocol.httpVersion}</Row>
+        <Row label="Median TTFB" mono>{r.aggregates.ttfb.medianMs} ms</Row>
+        <Row label="Median total" mono>{r.aggregates.total.medianMs} ms</Row>
+        <Row label="TTFB range" mono>{r.aggregates.ttfb.minMs}–{r.aggregates.ttfb.maxMs} ms</Row>
+        <Row label="Median TLS" mono>{r.aggregates.tls.medianMs} ms</Row>
+        <Row label="Redirects" mono>{r.redirects.count}</Row>
+      </div>
+
+      <div className="mt-4">
+        <div style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Per-sample TTFB (5 fresh connections)</div>
+        <div className="mt-2 flex flex-col gap-1.5">
+          {r.samples.map((s: any, i: number) => (
+            <div key={i} className="flex items-center gap-2">
+              <span style={{ width: 42, color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>#{i + 1}</span>
+              <div className="flex-1 rounded-full" style={{ height: 8, background: 'rgba(10,10,11,0.05)' }}>
+                <div className="rounded-full" style={{ height: 8, width: `${Math.round((s.ttfbMs / maxTtfb) * 100)}%`, background: bandTone, transition: 'width .4s var(--micro-ease, ease)' }} />
+              </div>
+              <span style={{ width: 64, textAlign: 'right', color: C.ink2, fontFamily: FONT.mono, fontSize: 11 }}>{s.ttfbMs} ms</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <PerfChip label="type " value={r.transfer.contentType || '—'} />
+        <PerfChip label="encoding " value={r.transfer.contentEncoding || 'none'} />
+        {r.transfer.compressibleWithoutCompression && <span className="rounded-full px-2.5 py-1" style={{ background: 'rgba(180,83,9,0.1)', color: C.fallback, fontFamily: FONT.mono, fontSize: 11 }}>uncompressed</span>}
+        <PerfChip label="cache " value={r.caching.cacheControl ? 'set' : r.caching.etag ? 'etag' : 'none'} />
+      </div>
+
+      {r.findings.length > 0 && (
+        <div className="mt-4">
+          <div style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{r.findings.length} finding(s)</div>
+          <div className="mt-1.5 flex flex-col gap-2">
+            {r.findings.map((f: any) => (
+              <div key={f.id} className="rounded-xl px-3 py-2.5" style={{ background: C.bg, border: `1px solid ${C.hairline}` }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded px-1.5 py-0.5" style={{ background: `${SEVERITY_TONE[f.severity]}18`, color: SEVERITY_TONE[f.severity], fontFamily: FONT.mono, fontSize: 10, textTransform: 'uppercase', fontWeight: 600 }}>{f.severity}</span>
+                  <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 500 }}>{f.title}</span>
+                </div>
+                <div className="mt-1" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12 }}>{f.remediation}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11 }}>{(r.limitations || []).join(' ')}</p>
+    </Card>
+  );
+}
+
 export function WorkResultView({ result, runners }: { result: WorkResult; runners: RunnerHealth[] }) {
   const raw = result.artifact.report;
   const rep = raw && raw.service === 'vendor_security_assessment' ? (raw as VendorSecurityAssessmentReport) : null;
+  const perf = raw && raw.service === 'web_performance_probe' ? (raw as any) : null;
   const ev = result.evidence;
   const art = result.artifact;
   const bv = result.buyerVerification;
@@ -55,11 +122,12 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
               <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: decisionColor }} />
               <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, fontWeight: 600 }}>{dm?.label ?? 'Assessment delivered'}</span>
             </div>
-            <h2 style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', wordBreak: 'break-word' }}>{rep?.hostname || result.input.url}</h2>
+            <h2 style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', wordBreak: 'break-word' }}>{rep?.hostname || perf?.target?.host || result.input.url}</h2>
             <div style={{ color: C.ink2, fontFamily: FONT.mono, fontSize: 12.5, wordBreak: 'break-all' }}>{result.input.url}</div>
             {policy && <div className="mt-1" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>Policy: {policyLabel} · {result.requestSource === 'mcp' ? 'via external MCP agent' : 'via browser'}</div>}
           </div>
           {rep && <ScoreRing score={rep.score} band={rep.riskBand} />}
+          {perf && <ScoreRing score={perf.score.value} band={perf.score.band} />}
         </div>
         {policy && policy.reasonCodes.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -121,6 +189,9 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
           <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11 }}>{rep.limitations}</p>
         </Card>
       )}
+
+      {/* ── 2b) PERFORMANCE ASSESSMENT ───────────────────────────────── */}
+      {perf && <PerformanceSection r={perf} />}
 
       {/* ── 3) AGENT ACTIVITY ────────────────────────────────────────── */}
       <Card>

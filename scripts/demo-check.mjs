@@ -53,6 +53,18 @@ try {
   bad(`/api/work/health failed: ${String(e?.message || e)}`);
 }
 
+// 2b) BOTH production services available at a 3-runner quorum
+try {
+  const r = await fetch(APP_URL + '/api/work/services', { signal: AbortSignal.timeout(12000) });
+  const j = await r.json();
+  const byId = Object.fromEntries((j?.services || []).map((s) => [s.id, s]));
+  for (const id of ['vendor_security_assessment', 'web_performance_probe']) {
+    byId[id]?.available ? ok(`${id} available (${byId[id].supportingRunners}/3 runners)`) : bad(`${id} not available (${byId[id]?.supportingRunners ?? 0}/3 runners)`);
+  }
+} catch (e) {
+  bad(`/api/work/services failed: ${String(e?.message || e)}`);
+}
+
 // 3) key routes
 for (const [p, label] of [['/', 'landing /'], ['/work', 'product /work'], ['/lens', 'ledger lens /lens'], ['/api/health', '/api/health']]) {
   (await head(p)) ? ok(`${label} → 200`) : bad(`${label} not 200`);
@@ -65,9 +77,10 @@ if (fails) {
 console.log('\n✅ demo READY — HTTPS, trusted cert, devnet, 3 runners, routes live. No ledger job created.');
 
 if (FULL) {
-  console.log('\n--- --full: running the real work preflight (creates one devnet job) ---');
-  const r = spawnSync('node', ['scripts/preflight-work-e2e.mjs', '--require-ledger', '--require-runners'], {
-    stdio: 'inherit', env: { ...process.env, APP_URL },
-  });
-  process.exit(r.status ?? 1);
+  console.log('\n--- --full: running the real agentic + performance preflights (creates devnet jobs) ---');
+  for (const script of ['scripts/preflight-agentic.mjs', 'scripts/preflight-probe.mjs']) {
+    const r = spawnSync('node', [script, '--require-ledger', '--require-runners'], { stdio: 'inherit', env: { ...process.env, APP_URL } });
+    if (r.status) process.exit(r.status);
+  }
+  process.exit(0);
 }

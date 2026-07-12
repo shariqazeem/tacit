@@ -62,7 +62,7 @@ function appDownResult(e: unknown) {
 }
 
 // ── Server ────────────────────────────────────────────────────
-const server = new McpServer({ name: 'tacit', version: '0.4.0' });
+const server = new McpServer({ name: 'tacit', version: '0.5.0' });
 
 const HTTPS_RE = /^https:\/\/[^\s]{1,2048}$/i;
 const workJobId = () => `wjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -405,7 +405,7 @@ server.tool(
         `Registered services (default: ${json?.defaultService}):`,
         ...svcs.map((s: any) => `• ${s.id} v${s.version}${s.legacy ? ' (legacy)' : ''} — ${s.available ? `AVAILABLE (${s.supportingRunners}/3 runners)` : `unavailable (${s.supportingRunners}/3 runners)`}`),
         '',
-        'Use tacit_assess_vendor to run a real vendor_security_assessment (no fallback).',
+        'Use tacit_assess_vendor for a vendor security pre-screen, or tacit_probe_performance for a bounded web performance pre-screen (both real, no fallback).',
       ].join('\n'));
     } catch (e) {
       return appDownResult(e);
@@ -485,6 +485,77 @@ server.registerTool(
         ok: true, mode: String(data.mode), jobId: String(data.jobId ?? id), resumed: !!data.resumption?.resumed,
         requestedUrl: url, finalUrl: rep?.finalUrl,
         score: rep?.score, riskBand: rep?.riskBand,
+        decision: pol?.decision, decisionReasons: pol?.reasonCodes,
+        findings: findings.map((f: any) => ({ id: f.id, severity: f.severity, title: f.title, remediation: f.remediation })),
+        winner: String(data.winner?.providerLabel ?? ''), amount: Number(data.amount ?? 0), currency: String(data.currency ?? 'USD.demo'),
+        providerCommittedSha256: data.artifact?.providerCommittedSha256, buyerComputedSha256: data.artifact?.buyerComputedSha256,
+        verified: !!data.buyerVerification?.verified,
+        settlementContractId: String(ev.settlementContractId ?? ''), receiptContractId: String(ev.receiptContractId ?? ''),
+        privacy: 'report private to buyer + winner; auditor sees receipt only; sealed bids private per provider',
+      },
+    };
+  },
+);
+
+// ── tacit_probe_performance ───────────────────────────────────
+server.registerTool(
+  'tacit_probe_performance',
+  {
+    description:
+      'Procure a REAL bounded web performance probe on Canton. Three separate provider processes bid as distinct Canton parties; the winner takes 5 fresh-connection samples of the target (TTFB / TLS / total latency, transfer + caching posture, ALPN HTTP version); the buyer verifies hash + schema + target + score off-ledger before accepting; a deterministic latency-SLO policy returns a decision; an auditor receives only the receipt. No fallback, no simulation, no LLM-invented facts. Can take ~15–45s. This is a bounded pre-screen, NOT a load test or availability guarantee.',
+    inputSchema: {
+      url: z.string().regex(HTTPS_RE).describe('The public HTTPS endpoint to probe (https:// only).'),
+      maxBudget: z.number().positive().max(10000).describe('Maximum budget in USD.demo (a demo voucher).'),
+      policyId: z.enum(['latency-slo-standard-v1', 'latency-slo-strict-v1']).optional().describe('Latency SLO policy (default latency-slo-standard-v1).'),
+      jobId: z.string().regex(/^[A-Za-z0-9._:-]{3,64}$/).optional().describe('Optional idempotency key; reuse to safely resume (no double payment).'),
+      buyerLabel: z.string().max(64).optional().describe('Display label only — does NOT allocate a distinct Canton party.'),
+    },
+    outputSchema: assessOut,
+  },
+  async ({ url, maxBudget, policyId, jobId, buyerLabel }) => {
+    const id = jobId || workJobId();
+    let data: any;
+    try {
+      const res = await fetchJson(
+        `${APP_URL}/api/work/procure`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType: 'web_performance_probe', input: { url }, maxBudget, policyId, buyerName: buyerLabel, requestSource: 'mcp' }) },
+        150000,
+      );
+      if (!res.ok || !res.json?.ok) {
+        return { isError: true, content: [{ type: 'text' as const, text: `Performance probe failed (no fallback): ${res.json?.error || `HTTP ${res.status}`}\nJob id ${id} — reuse it to safely resume.` }] };
+      }
+      data = res.json;
+    } catch (e) {
+      return appDownResult(e);
+    }
+    if (data.artifact?.available && !data.buyerVerification?.verified) {
+      return { isError: true, content: [{ type: 'text' as const, text: 'Buyer verification did not pass — refusing to report a success.' }] };
+    }
+    const rep = data.artifact?.report; const ev = data.evidence || {}; const pol = data.policy;
+    const findings = Array.isArray(rep?.findings) ? rep.findings : [];
+    const lines = [
+      `WEB PERFORMANCE PROBE — ${url}  (${data.mode}${data.resumption?.resumed ? ' · resumed' : ''})`,
+      'Three separate provider processes bid as distinct Canton parties (one shared hosted-validator credential — not separate validators or organizations).',
+      `Winner ${data.winner?.providerLabel}: awarded and prepaid ${data.amount} ${data.currency} (a demo voucher, not real money).`,
+      '',
+    ];
+    if (data.artifact?.available && rep) {
+      lines.push(`Performance: ${rep.score?.band} · median TTFB ${rep.aggregates?.ttfb?.medianMs}ms · ${rep.protocol?.httpVersion} · score ${rep.score?.value}/100 · ${findings.length} finding(s).`);
+      if (pol) lines.push(`Decision (${pol.policyId}): ${pol.decision.toUpperCase()} — ${pol.reasonCodes.join(', ')}.`);
+      lines.push(`Buyer verified the exact delivered bytes off-ledger (hash + schema + target + score): committed ${data.artifact.providerCommittedSha256?.slice(0, 12)}… == computed ${data.artifact.buyerComputedSha256?.slice(0, 12)}….`);
+      if (findings.length) lines.push('Top findings: ' + findings.slice(0, 3).map((f: any) => `${f.severity}:${f.title}`).join(' · '));
+    } else {
+      lines.push('This job was already accepted; the report body is not reconstructed. Settlement + receipt below are real.');
+    }
+    lines.push('Report is private to buyer + winner; the auditor sees the receipt commitment, not the report.');
+    lines.push(`Settlement ${ev.settlementContractId} · Receipt ${ev.receiptContractId}`);
+
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      structuredContent: {
+        ok: true, mode: String(data.mode), jobId: String(data.jobId ?? id), resumed: !!data.resumption?.resumed,
+        requestedUrl: url, finalUrl: rep?.target?.finalUrl,
+        score: rep?.score?.value, riskBand: rep?.score?.band,
         decision: pol?.decision, decisionReasons: pol?.reasonCodes,
         findings: findings.map((f: any) => ({ id: f.id, severity: f.severity, title: f.title, remediation: f.remediation })),
         winner: String(data.winner?.providerLabel ?? ''), amount: Number(data.amount ?? 0), currency: String(data.currency ?? 'USD.demo'),

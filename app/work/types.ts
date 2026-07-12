@@ -8,11 +8,34 @@ export { WORK_SCHEMA, WORK_PERSONAS } from '../lens/ledger/workTypes';
 
 export type WorkPhase = 'idle' | 'running' | 'success' | 'resumed' | 'error';
 
-/** Onboarding policy display metadata (ids match shared/services POLICY_IDS). */
-export const POLICY_META: { id: string; label: string; hint: string }[] = [
-  { id: 'standard-saas-v1', label: 'Standard SaaS', hint: 'Balanced onboarding for typical SaaS vendors.' },
-  { id: 'strict-infrastructure-v1', label: 'Strict infrastructure', hint: 'Stricter thresholds for infrastructure / data processors.' },
-];
+/** Service display metadata (ids match shared/services SERVICE_IDS; legacy excluded). */
+export const SERVICE_META: Record<string, { label: string; short: string; kicker: string; inputLabel: string; runningLine: string; scope: string }> = {
+  vendor_security_assessment: {
+    label: 'Vendor security assessment', short: 'Security', kicker: 'Private vendor assessment',
+    inputLabel: 'Vendor / API / MCP endpoint', runningLine: 'Winner is assessing the vendor’s public web-security posture — TLS, headers, DNS/mail and security.txt.',
+    scope: 'a passive public web-security posture pre-screen — not a penetration test or certification',
+  },
+  web_performance_probe: {
+    label: 'Web performance probe', short: 'Performance', kicker: 'Private performance probe',
+    inputLabel: 'Public HTTPS endpoint', runningLine: 'Winner is running the performance probe — five fresh-connection samples against the target.',
+    scope: 'a bounded performance pre-screen — not a load test or an availability guarantee',
+  },
+};
+export const SERVICE_ORDER = ['vendor_security_assessment', 'web_performance_probe'];
+
+/** Onboarding policy display metadata, SERVICE-SCOPED (ids match shared/services). */
+export const POLICY_BY_SERVICE: Record<string, { id: string; label: string; hint: string }[]> = {
+  vendor_security_assessment: [
+    { id: 'standard-saas-v1', label: 'Standard SaaS', hint: 'Balanced onboarding for typical SaaS vendors.' },
+    { id: 'strict-infrastructure-v1', label: 'Strict infrastructure', hint: 'Stricter thresholds for infrastructure / data processors.' },
+  ],
+  web_performance_probe: [
+    { id: 'latency-slo-standard-v1', label: 'Standard latency SLO', hint: 'Balanced latency SLO for a public endpoint.' },
+    { id: 'latency-slo-strict-v1', label: 'Strict latency SLO', hint: 'Stricter latency SLO for latency-sensitive endpoints.' },
+  ],
+};
+/** All policies (for lookups). */
+export const POLICY_META = [...POLICY_BY_SERVICE.vendor_security_assessment, ...POLICY_BY_SERVICE.web_performance_probe];
 
 /** Onboarding decision display metadata. */
 export const DECISION_META: Record<string, { label: string; tone: 'good' | 'warn' | 'review' | 'bad' }> = {

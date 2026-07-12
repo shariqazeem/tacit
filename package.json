@@ -24,7 +24,8 @@
     "demo:check": "node scripts/demo-check.mjs",
     "test:services": "node scripts/test-services.mjs",
     "preflight:agentic": "node scripts/preflight-agentic.mjs --require-ledger --require-runners",
-    "preflight:console": "node scripts/preflight-console.mjs --require-ledger --require-runners"
+    "preflight:console": "node scripts/preflight-console.mjs --require-ledger --require-runners",
+    "preflight:probe": "node scripts/preflight-probe.mjs --require-ledger --require-runners"
   },
   "dependencies": {
     "framer-motion": "^12.23.24",
