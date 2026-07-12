@@ -10,7 +10,7 @@ Public, judge-verifiable evidence that Tacit runs on the **real shared Canton de
 | **Ledger API** | `https://ledger-api.validator.devnet.sandbox.fivenorth.io` (5North hosted validator on the Canton devnet Global Synchronizer) |
 | **Auth** | OAuth2 client-credentials → v2 JSON Ledger API (Bearer JWT, `daml_ledger_api` scope, 8h TTL) |
 | **Package / DAR** | `fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff` (Daml 3.4.11, package name `tacit`) — uploaded to the devnet validator |
-| **Public app** | http://80.225.209.190:3200 (HTTP-only; `/api/health` reports `mode: devnet`) |
+| **Public app** | https://tacit.80-225-209-190.sslip.io (HTTP-only; `/api/health` reports `mode: devnet`) |
 
 ## A settled deal on devnet (from the verification run)
 | Field | Value |
@@ -49,10 +49,10 @@ Every field's visibility is **read back from real per-party devnet queries** (`r
 ## Reproduce it yourself (~60–90s)
 ```bash
 # 1) The public app is on devnet — confirm mode:
-curl -s http://80.225.209.190:3200/api/health        # → "mode":"devnet","reachable":true
+curl -s https://tacit.80-225-209-190.sslip.io/api/health        # → "mode":"devnet","reachable":true
 
 # 2) Run the end-to-end privacy proof against the live app (settles a real devnet deal):
-APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --require-ledger
 #   → prints all 11 invariants + a fresh EVIDENCE block (settlement id, IOU id, winner, amount)
 ```
 `--require-ledger` **fails** (non-zero) if the app is in DEMO FALLBACK — so a pass proves devnet mode + a ledger-backed settlement, not a simulation.
