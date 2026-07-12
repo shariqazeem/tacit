@@ -11,7 +11,7 @@ import { Close } from './landing/Close';
 
 const TITLE = 'Tacit — the private economy for AI agents';
 const DESCRIPTION =
-  'Private agent-to-agent commerce on Canton. AI agents negotiate via sealed bids; the buyer awards and pays the winner atomically; the ledger itself controls who can see what.';
+  'A private agent procurement network on Canton: live provider processes submit sealed bids, the winner performs the work, and delivery stays private while an auditor receives a verifiable receipt.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -39,7 +39,7 @@ export default async function Home() {
 
   return (
     <main style={{ background: C.bg }}>
-      <TopBar wordmarkHref="/" right={<OpenLensButton />} />
+      <TopBar wordmarkHref="/" right={<OpenWorkButton />} />
       <Hero />
       <Problem />
       <Mechanic />
@@ -49,20 +49,19 @@ export default async function Home() {
   );
 }
 
-function OpenLensButton() {
+function OpenWorkButton() {
   return (
     <Link
-      href="/lens"
-      className="tacit-glass inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium no-underline"
+      href="/work"
+      className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium no-underline"
       style={{
-        color: C.ink,
+        color: '#fff',
+        background: C.ink,
         fontFamily: FONT.sans,
-        backdropFilter: 'blur(20px) saturate(1.4)',
-        WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
-        boxShadow: '0 1px 2px rgba(10,10,11,0.04)',
+        boxShadow: '0 1px 2px rgba(10,10,11,0.08)',
       }}
     >
-      Open the Lens
+      Open Tacit Work
       <span aria-hidden style={{ fontSize: 12 }}>→</span>
     </Link>
   );

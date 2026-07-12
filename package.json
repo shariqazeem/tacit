@@ -19,7 +19,8 @@
     "canton3:local": "bash scripts/canton3-local.sh",
     "devnet:bootstrap": "node scripts/devnet-bootstrap.mjs",
     "mcp:build": "npm --prefix mcp install && npm --prefix mcp run build",
-    "mcp:start": "node mcp/dist/server.js"
+    "mcp:start": "node mcp/dist/server.js",
+    "test:work": "node scripts/test-work-unit.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.23.24",

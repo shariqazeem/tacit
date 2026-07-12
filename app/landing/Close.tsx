@@ -73,19 +73,26 @@ export function Close() {
         <Reveal delay={0.16}>
           <div className="mt-11 flex flex-wrap items-center justify-center gap-4">
             <Link
-              href="/lens"
+              href="/work"
               className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline"
               style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}
             >
-              See it live
+              Run real work
               <span aria-hidden style={{ fontSize: 12 }}>→</span>
+            </Link>
+            <Link
+              href="/lens"
+              className="inline-flex items-center gap-2 rounded-full px-5 py-3.5 text-[15px] font-medium no-underline"
+              style={{ color: C.ink, background: 'rgba(10,10,11,0.04)', border: `1px solid ${C.hairline}`, fontFamily: FONT.sans }}
+            >
+              Ledger Lens <span aria-hidden style={{ fontSize: 12 }}>→</span>
             </Link>
             <a
               href={REPO}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-full px-5 py-3.5 text-[15px] font-medium no-underline"
-              style={{ color: C.ink, background: 'rgba(10,10,11,0.04)', border: `1px solid ${C.hairline}`, fontFamily: FONT.sans }}
+              style={{ color: C.ink2, fontFamily: FONT.sans }}
             >
               GitHub <span aria-hidden style={{ fontSize: 12 }}>↗</span>
             </a>
