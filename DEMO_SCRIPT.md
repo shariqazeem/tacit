@@ -3,10 +3,10 @@
 **Thesis in one line:** *AI agents are starting to transact. On a transparent chain every deal leaks your prices to competitors. Tacit settles agent commerce **privately** on the real Canton devnet — and the ledger, not the app, decides who sees what.*
 
 **Setup before recording**
-- The app is **live on the Canton devnet**: http://80.225.209.190:3200. Confirm before recording:
+- The app is **live on the Canton devnet**: https://tacit.80-225-209-190.sslip.io. Confirm before recording:
   ```
-  curl -s http://80.225.209.190:3200/api/health                    # → "mode":"devnet","reachable":true
-  APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger   # → green, evidence block
+  curl -s https://tacit.80-225-209-190.sslip.io/api/health                    # → "mode":"devnet","reachable":true
+  APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --require-ledger   # → green, evidence block
   ```
 - Warm one negotiation on `/lens` first (the first call can be slightly slow).
 - Have the **persona switcher** visible and be ready to **copy the settlement contract id**.

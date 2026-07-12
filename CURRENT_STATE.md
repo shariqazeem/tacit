@@ -25,7 +25,7 @@ winner: providerC · settled 34 USD.demo · all 11 privacy invariants hold
 **Live endpoints:**
 | Thing | Where |
 |---|---|
-| Tacit app (public) | `http://80.225.209.190:3200` (OCI VM, systemd `tacit.service`, mode **devnet**) |
+| Tacit app (public) | `https://tacit.80-225-209-190.sslip.io` (OCI VM, systemd `tacit.service`, mode **devnet**) |
 | Devnet Ledger API (5North) | `https://ledger-api.validator.devnet.sandbox.fivenorth.io` (v2 JSON Ledger API) |
 | Devnet OAuth token | `https://auth.sandbox.fivenorth.io/application/o/token/` (client-credentials) |
 | Seaport deploy UI + our org | `https://app.devnet.seaport.to/tacit` (org "Tacit"; DAR-upload UI) |

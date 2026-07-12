@@ -33,10 +33,15 @@ npm run build      # → mcp/dist/server.js
 ```
 Or from the repo root: `npm run mcp:build`.
 
-## Prereq: the Tacit app must be running
+## Prereq: point at a running Tacit app
 The MCP server calls the app at `TACIT_APP_URL` (default `http://localhost:3100`).
-Start the app (and, for real settlements, the Canton stack) — see the repo root
-`README.md`. For a real on-ledger result:
+**For the live devnet product, point it at the deployed HTTPS origin:**
+```bash
+TACIT_APP_URL=https://tacit.80-225-209-190.sslip.io
+```
+`tacit_work_health` / `tacit_procure_work` need a devnet app with three ready runners
+(the deployed origin has them). To run your own, see the repo root `README.md`. For a
+local on-ledger negotiation result:
 ```bash
 TACIT_PACKAGE_ID=c0f7a95e01d57cc04dd72478d7886b98556d0831956767ac8e84f42b664bde1a PORT=3100 npm start
 ```

@@ -6,18 +6,21 @@
 
 > 🟢 **Live on the real Canton devnet.** Not a sandbox, not a mock. The full app settles real deals through **5North's hosted validator on the Canton Global Synchronizer**, with real contract ids.
 
-- **Live app:** **http://80.225.209.190:3200** — `/` (product story) · `/lens` (watch a deal settle, then switch personas to see the ledger-enforced privacy). *(HTTP-only.)*
-- **Live proof:** `curl http://80.225.209.190:3200/api/health` → `"mode":"devnet","reachable":true`. Full evidence: **[docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)**.
+- **Live app (HTTPS):** **https://tacit.80-225-209-190.sslip.io** — [`/work`](https://tacit.80-225-209-190.sslip.io/work) (run a real private procurement) · [`/lens`](https://tacit.80-225-209-190.sslip.io/lens) (watch a deal settle, then switch personas to see the ledger-enforced privacy).
+- **Live proof:** `curl https://tacit.80-225-209-190.sslip.io/api/work/health` → `"ok":true,"mode":"devnet"`. Work evidence: **[docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md)** · devnet evidence: **[docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)**.
+- *(Emergency origin, not judge-facing: `http://80.225.209.190:3200`.)*
 
 ### Verify it's real in ~60–90 seconds
 ```bash
-# 1) the deployed app is in devnet mode (not a sandbox, not fallback):
-curl -s http://80.225.209.190:3200/api/health          # → "mode":"devnet", our package fdfbfcf0…
+# 1) the deployed app is in devnet mode with all three provider runners ready:
+curl -s https://tacit.80-225-209-190.sslip.io/api/work/health   # → "ok":true,"mode":"devnet","runners":3
 
-# 2) settle a real deal on devnet and prove all 11 privacy invariants:
-APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger
-#   → prints every invariant + a fresh EVIDENCE block (real settlement id, IOU id, winner, amount).
-#   --require-ledger EXITS NON-ZERO on DEMO FALLBACK, so a pass proves a ledger-backed devnet settlement.
+# 2) run a REAL private procurement + prove all 48 work invariants (tamper + idempotent replay):
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-work-e2e.mjs --require-ledger --require-runners
+
+# 3) settle a sealed-bid deal + prove all 11 original privacy invariants:
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --require-ledger
+#   Both --require-ledger flags EXIT NON-ZERO on DEMO FALLBACK — a pass proves a ledger-backed devnet run.
 ```
 
 ---
@@ -53,7 +56,7 @@ Sealed-bid procurement between agents, where **privacy is enforced by the ledger
 | **Tacit Work:** separate provider runner processes, each bidding as its **own** Canton party (`tacit-work` pkg `9ab077f2…`) | ✅ **Real** — [docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md) |
 | **Tacit Work:** winner runs a **real** `site_audit`; buyer recomputes SHA-256 off-ledger and refuses to accept on mismatch | ✅ **Real** |
 | **Tacit Work:** private delivery (report hidden from the auditor & losers) + auditor-visible receipt (no report body) | ✅ **Real** |
-| MCP: external agent transacts as its **own** Canton party | ✅ **Real** |
+| MCP: `tacit_procure` (negotiate) + `tacit_procure_work` (real work spine) — an agent transacts as its **own** Canton party, no fallback | ✅ **Real** |
 | The provider bidders in the **`/lens` negotiation demo** | 🟡 **App-operated** — run inside the app (deterministic / LLM-assisted). *Tacit Work* (above) uses separate runner processes. |
 | Tacit Work runners: **separate processes, distinct parties**, but one shared hosted-validator OAuth credential | 🟡 **Not** separate validator operators or independently-credentialed institutions. |
 | `USD.demo` payment token | 🟡 **Demo voucher** — self-issued by the buyer. *Not* real money, a stablecoin, or Canton Coin. |
@@ -72,7 +75,7 @@ contains no report body**.
 
 ```bash
 # 3 runners + app in devnet mode, then:
-npm run preflight:work     # 28/28 invariants incl. a tamper test + idempotent replay
+npm run preflight:work     # 48/48 invariants incl. per-party bid privacy, a tamper test + idempotent replay
 ```
 It's a new Daml package (`tacit-work`, `9ab077f2…`) **data-dependent on the frozen `tacit`
 core** — the demo is untouched. Evidence + contract ids: [docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md).
@@ -82,9 +85,29 @@ Daml proves *who sees what* and *that payment happened*, the **buyer** proves th
 
 ## Devnet architecture (exact)
 ```
-Browser ─▶ Next.js app ─▶ cantonV2 adapter ─▶ 5North devnet validator ─▶ Canton Global Synchronizer
-           / and /lens     OAuth2 + v2 JSON        (v2 JSON Ledger API)        (shared devnet)
-                           Ledger API
+Browser / MCP
+      │  (HTTPS → nginx → Next.js app on :3200 → cantonV2 adapter, OAuth2 + v2 JSON Ledger API)
+      ▼
+Tacit Work buyer
+      │  opens a private request on Canton (frozen Rfs + ActiveWorkRequest)
+      ▼
+Provider Runner A / B / C          ← three separate loopback processes, distinct Canton parties
+      │  each reads the request and submits its OWN sealed bid (never sees a competitor's)
+      ▼
+Frozen atomic Award + USD.demo prepayment   ← one Daml transaction (Rfs.Award), lowest bid wins
+      │
+      ▼
+Winner performs site_audit          ← real, SSRF-guarded HTTPS audit
+      │
+      ▼
+PrivateDelivery → buyer hash check → DeliveryReceipt
+   (buyer + winner only)   (SHA-256 off-ledger)   (buyer + winner + auditor; no report body)
+```
+All three provider runners are **separate processes with distinct Canton parties**, but they share
+**one** hosted-validator OAuth credential — **not** separate validators or organizations.
+The `/` story and `/lens` privacy explorer ride the same app; `/lens` shows the negotiation demo.
+```
+5North devnet validator (v2 JSON Ledger API) ─▶ Canton Global Synchronizer (shared devnet)
 ```
 - **Auth:** OAuth2 **client-credentials** → the validator's **v2 JSON Ledger API** (Bearer JWT, `daml_ledger_api` scope, 8h TTL; the adapter caches + refreshes on 401). **The client secret is never in this repo** — it lives in the 5North access PDF and the server's private env file.
 - **The app is a thin ledger client.** One `TACIT_LEDGER_MODE` env selects the target: `devnet` (live), `canton3-local` (Splice LocalNet — real Canton 3.x, dev/insurance), or `sandbox` (Daml 2.x — the offline DEMO FALLBACK tier). Same app code for all three.
@@ -116,7 +139,7 @@ The **Auditor** sees the settlement and the amount paid, but **never a single se
 `scripts/preflight-e2e.mjs` settles a real deal on devnet and asserts all of these against per-party ledger reads (see [docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md) for the list + a passing run). A failure exits non-zero — we do not turn a failing check into a passing claim.
 
 ## MCP — an external agent transacts as its own Canton party
-Tacit ships an **MCP server** ([`mcp/`](mcp/)) so any MCP-capable agent (Claude Code / Desktop) can run a **private sealed-bid procurement on Canton** as **its own party** and get real contract ids back. It's a thin client of the app's HTTP API. Tools: `tacit_health` · `tacit_procure` `{ description, maxBudget, buyerName? }` · `tacit_my_deals` `{ buyerName }` · `tacit_explain_privacy`. Agent-to-agent isolation is real: `tacit_my_deals` for one agent never returns another agent's deals — the ledger, not the app, decides who sees what.
+Tacit ships an **MCP server** ([`mcp/`](mcp/)) so any MCP-capable agent (Claude Code / Desktop) can run real Canton commerce as **its own party** and get real contract ids back. It's a thin client of the app's HTTP API. **Primary (Tacit Work):** `tacit_work_health` · `tacit_procure_work` `{ url, maxBudget, jobId?, buyerLabel? }` — an agent procures a real audit (no fallback; errors if the network isn't ready). **Negotiation demo:** `tacit_procure` `{ description, maxBudget, buyerName? }` · `tacit_my_deals` `{ buyerName }` · `tacit_health` · `tacit_explain_privacy`. Agent-to-agent isolation is real: `tacit_my_deals` for one agent never returns another agent's deals — the ledger, not the app, decides who sees what.
 
 ## Live public evidence (from a verification run — new ids each run)
 - **Package / DAR:** `fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff` (Daml 3.4.11, name `tacit`), uploaded to the devnet validator.
@@ -134,8 +157,9 @@ export PATH="/opt/homebrew/opt/openjdk@17/bin:$HOME/.daml/bin:$PATH"; export JAV
 ( cd daml && daml test )          # v1 model proof  → test ok (2/10), testAuditor ok (4/11)
 npm run daml:test:v2              # v2 model proof  → identical under Daml 3.4.11
 
-# Verify the LIVE devnet deployment (no local ledger needed):
-APP_URL=http://80.225.209.190:3200 node scripts/preflight-e2e.mjs --require-ledger
+# Verify the LIVE devnet deployment over HTTPS (no local ledger needed):
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-work-e2e.mjs --require-ledger --require-runners
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --require-ledger
 ```
 To run the app yourself against devnet you need the 5North OAuth creds (not in this repo) — see [DEPLOY.md](DEPLOY.md). Without a ledger, the app runs in clearly-labeled **DEMO FALLBACK** (deterministic, in-memory, no payment claimed).
 
