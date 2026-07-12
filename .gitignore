@@ -58,3 +58,7 @@ p2p.key
 
 # preview launch config (session-specific paths)
 .claude/launch.json
+
+# working strategy doc (not part of the build)
+TACIT_FIRST_PLACE_BUILD_STRATEGY_AND_PROMPTS.md
+runner/src/_shared.ts

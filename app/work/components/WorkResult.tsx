@@ -26,9 +26,12 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 export function WorkResultView({ result, runners }: { result: WorkResult; runners: RunnerHealth[] }) {
-  const rep = result.artifact.report;
+  // Phase-1 UI renders the legacy site_audit shape; the agentic vendor UI lands in Phase 5.
+  const raw = result.artifact.report;
+  const rep = raw && raw.service === 'site_audit' ? raw : null;
   const ev = result.evidence;
-  const hashMatch = result.artifact.verifiedThisRequest;
+  const art = result.artifact;
+  const hashMatch = art.verifiedThisRequest;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -139,9 +142,9 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
             {hashMatch ? 'Buyer recomputed the SHA-256 of the delivered bytes — it matches the on-ledger commitment.' : 'Report body was not reloaded this request.'}
           </span>
         </div>
-        <Row label="Buyer-computed SHA-256" mono>{result.artifact.sha256.slice(0, 24)}…</Row>
-        <Row label="Ledger commitment" mono>{result.artifact.sha256.slice(0, 24)}…</Row>
-        <Row label="Byte length" mono>{result.artifact.byteLength}</Row>
+        <Row label="Provider commitment (on-ledger)" mono>{art.providerCommittedSha256.slice(0, 24)}…</Row>
+        <Row label="Buyer-computed SHA-256 (off-ledger)" mono>{art.buyerComputedSha256 ? `${art.buyerComputedSha256.slice(0, 24)}…` : 'not computed (resumed)'}</Row>
+        <Row label="Byte length" mono>{art.byteLength}{art.buyerComputedByteLength != null ? ` (buyer: ${art.buyerComputedByteLength})` : ''}</Row>
         <Row label="Settlement"><CopyId id={ev.settlementContractId} /></Row>
         {ev.paymentIouContractId && <Row label="Payment IOU"><CopyId id={ev.paymentIouContractId} /></Row>}
         {ev.assignmentContractId && <Row label="Assignment"><CopyId id={ev.assignmentContractId} /></Row>}

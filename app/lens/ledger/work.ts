@@ -16,8 +16,9 @@ import {
   create, exercise, queryAs, ensureParty, pinnedParty, partyHint, T, PACKAGE_ID, LEDGER_MODE_ACTIVE, ledgerReachable,
 } from './client';
 import {
-  WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type SiteAuditReport, type BidView,
+  WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type ServiceReport, type BidView,
 } from './workTypes';
+import { getService } from '@/shared/services';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
 const CORE_PKG_ID = PACKAGE_ID || 'fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff';
@@ -57,9 +58,10 @@ const cidMap = (): Record<Persona, string[]> => ({ buyer: [], providerA: [], pro
 export interface WorkParams {
   jobId: string;
   serviceType: string;
-  input: { url?: string };
+  input: { url: string };
   maxBudget: number;
   buyerName?: string;
+  requestSource?: 'browser' | 'mcp';
 }
 
 export async function procureWork(
@@ -68,9 +70,12 @@ export async function procureWork(
 ): Promise<WorkResult> {
   if (LEDGER_MODE_ACTIVE === 'sandbox') throw new Error('tacit-work requires devnet/canton3-local (v2 ledger), not sandbox');
   if (!(await ledgerReachable())) throw new Error('ledger unreachable — tacit-work has no fallback');
-  if (params.serviceType !== 'site_audit') throw new Error(`unsupported serviceType ${params.serviceType}`);
-  const url = String(params.input?.url || '');
-  if (!/^https:\/\//i.test(url)) throw new Error('input.url must be an https:// URL');
+  // Registry validation — only an allowlisted, registered service may be procured.
+  const svc = getService(params.serviceType);
+  if (!svc) throw new Error(`unregistered serviceType ${params.serviceType}`);
+  const inputVal = svc.validateInput(params.input);
+  if (inputVal.ok !== true) throw new Error(inputVal.error);
+  const url = inputVal.value.url;
 
   const bidTimeout = opts.bidTimeoutMs ?? 45_000;
   const delivTimeout = opts.deliveryTimeoutMs ?? 45_000;
@@ -87,7 +92,7 @@ export async function procureWork(
   const invited = [pA, pB, pC];
   const label: Record<string, string> = { [pA]: 'providerA', [pB]: 'providerB', [pC]: 'providerC' };
   const rfsId = `WRK-${params.jobId}`;
-  const serviceInput = JSON.stringify({ url });
+  const serviceInput = svc.canonicalInput(inputVal.value); // canonical, bound to the ActiveWorkRequest
   let resumed = false;
 
   const personaParties: { key: Persona; party: string }[] = [
@@ -236,7 +241,7 @@ export async function procureWork(
 
   // ── assemble the honest contract ─────────────────────────────────────────────
   const reportAvailable = !!delivery; // real bytes were loaded (and re-hashed) THIS request
-  const report = reportAvailable ? (safeParse(reportJson) as SiteAuditReport | null) : null;
+  const report = reportAvailable ? (safeParse(reportJson) as ServiceReport | null) : null;
 
   return {
     ok: true,
@@ -246,6 +251,8 @@ export async function procureWork(
     rfsId,
     workPackage: WORK_PKG,
     serviceType: params.serviceType,
+    serviceVersion: svc.version,
+    requestSource: params.requestSource || 'browser',
     buyerLabel: params.buyerName || 'Buyer',
     input: { url },
     parties: { buyer, providerA: pA, providerB: pB, providerC: pC, auditor },
@@ -256,8 +263,15 @@ export async function procureWork(
     artifact: {
       available: reportAvailable,
       report,
+      // provider's on-ledger commitment vs the buyer's INDEPENDENT computation
+      // (null on a resume where the report bytes weren't reloaded). Never the same
+      // value rendered twice under two labels.
       sha256: reportSha,
+      providerCommittedSha256: reportSha,
+      buyerComputedSha256: reportAvailable ? sha256Hex(reportJson) : null,
       byteLength: reportLen,
+      providerCommittedByteLength: reportLen,
+      buyerComputedByteLength: reportAvailable ? Buffer.byteLength(reportJson, 'utf8') : null,
       verifiedThisRequest: reportAvailable,
     },
     evidence: {

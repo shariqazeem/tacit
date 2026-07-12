@@ -22,6 +22,8 @@ const partyShort = () => {
   return fp ? `${name}::${fp.slice(0, 8)}` : name;
 };
 let ready = false;
+let runnerState: 'starting' | 'ready' | 'busy' | 'degraded' = 'starting';
+let lastHeartbeatUtc = new Date().toISOString();
 startHealth(cfg.healthPort, () => ({
   ready,
   instanceId: cfg.instanceId,
@@ -30,6 +32,10 @@ startHealth(cfg.healthPort, () => ({
   label: cfg.label,
   partyShort: partyShort(),
   ledgerMode: 'devnet',
+  // capability advertisement — which registered services this process can execute
+  services: cfg.services,
+  state: runnerState,
+  lastHeartbeatUtc,
 }));
 
 const log = (...a: unknown[]) => console.log(`[${cfg.label} ${cfg.instanceId} pid=${process.pid}]`, ...a);
@@ -53,6 +59,11 @@ async function tickBids(): Promise<void> {
     const jobId = String(awr.jobId);
     if (state.bids[jobId]) continue; // durable: already bid this job
     if (!(awr.invitedProviders || []).includes(cfg.party)) continue;
+    // Capability gate: never bid on a service this runner cannot execute.
+    if (!cfg.services.includes(String(awr.serviceType))) {
+      log(`decline ${jobId}: unsupported service ${awr.serviceType}`);
+      continue;
+    }
     const price = priceFor(awr);
     const bidCid = await canton.create(T_BID, { rfsId: awr.rfsId, provider: cfg.party, buyer: awr.buyer, price: String(price) }, [cfg.party]);
     state.bids[jobId] = bidCid;

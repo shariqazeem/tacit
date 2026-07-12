@@ -9,8 +9,10 @@ export interface RunnerConfig {
   // private pricing policy (never returned to the buyer, never on-ledger)
   baseCost: number;
   margin: number;
+  minPrice: number; // private floor; runner declines below this
   pollMs: number;
   stateFile: string;
+  services: string[]; // advertised service capabilities (registered ids)
   // ledger (5North devnet)
   apiUrl: string;
   tokenUrl: string;
@@ -45,8 +47,13 @@ export function loadConfig(): RunnerConfig {
     healthPort: num('RUNNER_HEALTH_PORT', 0),
     baseCost: num('RUNNER_BASE_COST', 20),
     margin: num('RUNNER_MARGIN', 0.35),
+    minPrice: num('RUNNER_MIN_PRICE', 1),
     pollMs: num('RUNNER_POLL_MS', 2500),
     stateFile: process.env.RUNNER_STATE_FILE || `/tmp/tacit-runner-${req('RUNNER_PROVIDER_ID')}.json`,
+    // Advertise ONLY services this runner can actually execute. Phase 1 ships the
+    // site_audit adapter; the vendor adapter (and its advertisement) arrives in Phase 3.
+    services: (process.env.RUNNER_SERVICES || 'site_audit')
+      .split(',').map((s) => s.trim()).filter(Boolean),
     apiUrl: req('TACIT_V2_API_URL'),
     tokenUrl: req('TACIT_DEVNET_TOKEN_URL'),
     clientId: req('TACIT_DEVNET_CLIENT_ID'),

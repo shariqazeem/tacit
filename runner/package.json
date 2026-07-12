@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Standalone Tacit provider runner — discovers work on Canton, bids, and fulfills site_audit. Not part of Next.js.",
   "scripts": {
-    "build": "tsc",
+    "build": "node ../scripts/sync-shared.mjs && tsc",
     "start": "node dist/index.js",
     "test": "node dist/selftest.js"
   },

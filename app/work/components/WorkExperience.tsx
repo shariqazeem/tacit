@@ -45,7 +45,7 @@ export function WorkExperience() {
       const r = await fetch('/api/work/health', { cache: 'no-store' });
       setHealth(await r.json());
     } catch {
-      setHealth({ ok: false, schema: 2, mode: 'unknown', ledgerReachable: false, corePackage: { name: 'tacit', shortId: '' }, workPackage: { name: 'tacit-work', shortId: '' }, runners: [], distinctInstances: false, distinctProcesses: false, reason: 'work health unreachable' });
+      setHealth({ ok: false, schema: 2, mode: 'unknown', ledgerReachable: false, corePackage: { name: 'tacit', shortId: '' }, workPackage: { name: 'tacit-work', shortId: '' }, runners: [], distinctInstances: false, distinctProcesses: false, serviceQuorum: {}, launchService: 'vendor_security_assessment', launchReady: false, reason: 'work health unreachable' });
     }
   }, []);
 
