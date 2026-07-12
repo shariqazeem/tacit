@@ -4,8 +4,8 @@
 import assert from 'node:assert';
 import {
   getService, isRegisteredService, listPublicServices, SERVICE_IDS, DEFAULT_SERVICE,
-  VENDOR_SERVICE, LEGACY_SITE_AUDIT, canonicalize, utf8Bytes, evaluatePolicy, POLICY_IDS,
-  validateAgentPlan, PLAN_BUDGET_MAX,
+  VENDOR_SERVICE, PERF_SERVICE, LEGACY_SITE_AUDIT, canonicalize, utf8Bytes, evaluatePolicy, POLICY_IDS,
+  validateAgentPlan, PLAN_BUDGET_MAX, policiesForService,
 } from '../runner/dist/_shared.js';
 
 const vendorReport = (over = {}) => ({
@@ -24,7 +24,7 @@ console.log('Tacit registered-service tests\n');
 
 t('vendor is the default new service; site_audit is legacy', () => {
   assert.equal(DEFAULT_SERVICE, VENDOR_SERVICE);
-  assert.deepEqual([...SERVICE_IDS].sort(), [LEGACY_SITE_AUDIT, VENDOR_SERVICE].sort());
+  assert.deepEqual([...SERVICE_IDS].sort(), [LEGACY_SITE_AUDIT, PERF_SERVICE, VENDOR_SERVICE].sort());
 });
 
 t('registered services resolve; unknown does not', () => {
@@ -94,7 +94,7 @@ t('vendor binding: report must match requested target/service', () => {
 
 t('public metadata carries no policy/internal fields', () => {
   const meta = listPublicServices();
-  assert.equal(meta.length, 2);
+  assert.equal(meta.length, 3);
   for (const m of meta) {
     for (const forbidden of ['baseCost', 'margin', 'minPrice', 'policy', 'secret', 'party', 'stateFile']) {
       assert.ok(!(forbidden in m), `metadata leaks ${forbidden}`);
@@ -130,7 +130,7 @@ t('policy: strict is stricter than standard on the same report', () => {
 t('policy: deterministic (same input → same decision)', () => {
   const rep = vendorReport({ score: 55 });
   assert.deepEqual(evaluatePolicy('standard-saas-v1', rep, 'now'), evaluatePolicy('standard-saas-v1', rep, 'now'));
-  assert.deepEqual(POLICY_IDS, ['standard-saas-v1', 'strict-infrastructure-v1']);
+  assert.deepEqual([...POLICY_IDS].sort(), ['latency-slo-standard-v1', 'latency-slo-strict-v1', 'standard-saas-v1', 'strict-infrastructure-v1'].sort());
 });
 
 // ── Buyer Agent Console: plan validator MUST fail closed ─────────────────────
@@ -183,6 +183,53 @@ t('plan: confidence clamped, assumptions bounded', () => {
   assert.equal(v.ok, true);
   assert.ok(v.proposal.confidence >= 0 && v.proposal.confidence <= 1);
   assert.ok(v.proposal.assumptions.length <= 6 && v.proposal.assumptions.every((a) => a.length <= 200));
+});
+
+// ── web_performance_probe: registry + service-scoped policies + plan ─────────
+const perfReport = (over = {}) => ({
+  service: 'web_performance_probe', version: 1, methodologyVersion: 'wpp-1.0', serviceVersion: 1,
+  target: { inputUrl: 'https://x.com', finalUrl: 'https://x.com/', host: 'x.com', ipPinned: true },
+  protocol: { httpVersion: 'HTTP/2' }, samples: Array.from({ length: 5 }, () => ({ connectMs: 10, tlsMs: 20, ttfbMs: 100, totalMs: 200, status: 200, bytesRead: 1000 })),
+  aggregates: { ttfb: { minMs: 100, medianMs: 100, maxMs: 100 }, tls: { minMs: 20, medianMs: 20, maxMs: 20 }, total: { minMs: 200, medianMs: 200, maxMs: 200 } },
+  transfer: { contentType: 'text/html', contentEncoding: 'br', compressibleWithoutCompression: false, bytesSampled: 1000 },
+  caching: { cacheControl: 'max-age=600', etag: '"x"', lastModified: null, age: null }, redirects: { count: 0, revalidatedChain: true },
+  findings: [], score: { value: 90, band: 'fast', version: 'wpp-score-1', scoringBreakdown: [{ key: 'base', label: 'b', points: 90, observed: 'x' }] }, limitations: ['passive'], measuredAtUtc: 't', ...over,
+});
+
+t('perf: service registered as a NEW (non-legacy) service; three services total', () => {
+  assert.ok(getService(PERF_SERVICE) && !getService(PERF_SERVICE).legacy);
+  assert.deepEqual([...SERVICE_IDS].sort(), [LEGACY_SITE_AUDIT, PERF_SERVICE, VENDOR_SERVICE].sort());
+  assert.equal(listPublicServices().length, 3);
+});
+t('perf: policies are service-scoped', () => {
+  assert.deepEqual(policiesForService(PERF_SERVICE).sort(), ['latency-slo-standard-v1', 'latency-slo-strict-v1'].sort());
+  assert.deepEqual(policiesForService(VENDOR_SERVICE).sort(), ['standard-saas-v1', 'strict-infrastructure-v1'].sort());
+  assert.deepEqual(policiesForService(LEGACY_SITE_AUDIT), []);
+});
+t('perf: report validator + recompute + input binding', () => {
+  const svc = getService(PERF_SERVICE);
+  assert.equal(svc.validateReport(perfReport()).ok, true);
+  assert.equal(svc.validateReport(perfReport({ samples: [] })).ok, false, 'needs 5 samples');
+  assert.equal(svc.validateReport(perfReport({ findings: [{ id: 'x', severity: 'critical', category: 'c', title: 't', evidence: 'e', remediation: 'r' }] })).ok, false, 'no critical');
+  assert.equal(svc.recomputeScoreOk(perfReport()), true);
+  assert.equal(svc.recomputeScoreOk(perfReport({ score: { value: 91, band: 'fast', version: 'wpp-score-1', scoringBreakdown: [{ key: 'base', label: 'b', points: 90, observed: 'x' }] } })), false, 'tamper');
+  assert.equal(svc.bindsToRequest(perfReport(), { url: 'https://x.com' }).ok, true);
+});
+t('perf policy: fast→approve; band-driven; strict ≥ standard', () => {
+  assert.equal(evaluatePolicy('latency-slo-standard-v1', perfReport(), 'now').decision, 'approve');
+  assert.equal(evaluatePolicy('latency-slo-standard-v1', perfReport({ score: { value: 30, band: 'poor', version: 'v', scoringBreakdown: [{ key: 'base', label: 'b', points: 30, observed: 'x' }] } }), 'now').decision, 'reject');
+  const mod = perfReport({ score: { value: 70, band: 'moderate', version: 'v', scoringBreakdown: [{ key: 'base', label: 'b', points: 70, observed: 'x' }] } });
+  const rank = { approve: 0, approve_with_conditions: 1, human_review: 2, reject: 3 };
+  assert.ok(rank[evaluatePolicy('latency-slo-strict-v1', mod, 'now').decision] >= rank[evaluatePolicy('latency-slo-standard-v1', mod, 'now').decision]);
+});
+t('plan: perf goal accepts perf service + latency policy; mismatch fails closed', () => {
+  assert.equal(validateAgentPlan({ serviceType: PERF_SERVICE, input: { url: 'https://acme.com' }, policyId: 'latency-slo-standard-v1', maxBudget: 25 }, () => true).ok, true);
+  assert.equal(validateAgentPlan({ serviceType: PERF_SERVICE, input: { url: 'https://acme.com' }, policyId: 'standard-saas-v1', maxBudget: 25 }, () => true).ok, false, 'vendor policy on perf');
+  assert.equal(validateAgentPlan({ serviceType: VENDOR_SERVICE, input: { url: 'https://acme.com' }, policyId: 'latency-slo-strict-v1', maxBudget: 25 }, () => true).ok, false, 'perf policy on vendor');
+});
+t('evaluatePolicy: cross-service policy is a precise error', () => {
+  assert.throws(() => evaluatePolicy('standard-saas-v1', perfReport(), 'now'), /not valid for service/);
+  assert.doesNotThrow(() => evaluatePolicy('latency-slo-standard-v1', perfReport(), 'now'));
 });
 
 console.log(fail ? `\n❌ ${fail} test(s) failed` : `\n✅ all ${pass} service registry + policy + plan tests passed`);
