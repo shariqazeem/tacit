@@ -1,25 +1,33 @@
 {
-  "product": "Tacit — private work exchange for software agents (vendor security) with a Buyer Agent Console",
+  "product": "Tacit — private work exchange for software agents (two live services: vendor security + web performance) with a Buyer Agent Console",
   "generatedFrom": "actual test + preflight execution",
-  "branch": "phase2b/agentic-private-work",
-  "commit": "da19ad9f6743efc5ea0c6e9955c067d02603262a",
+  "branch": "main",
+  "commit": "2a9c9bf",
   "packages": {
     "core": "fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff",
     "work": "9ab077f2392651a0a10df2233440570b11a7556a27fc4de31db3e775ae0ed0ed"
   },
-  "launchService": { "id": "vendor_security_assessment", "version": 1, "methodologyVersion": "vsa-1.0", "scoringVersion": "vsa-score-1" },
+  "damlChangesForSecondService": 0,
+  "newRuntimeDependenciesForSecondService": 0,
+  "services": [
+    { "id": "vendor_security_assessment", "version": 1, "methodologyVersion": "vsa-1.0", "scoringVersion": "vsa-score-1", "policies": ["standard-saas-v1", "strict-infrastructure-v1"], "real": true },
+    { "id": "web_performance_probe", "version": 1, "methodologyVersion": "wpp-1.0", "scoringVersion": "wpp-score-1", "policies": ["latency-slo-standard-v1", "latency-slo-strict-v1"], "real": true, "note": "second market vertical on the SAME frozen tacit-work template" }
+  ],
   "legacyService": { "id": "site_audit", "retained": "resumption + backward compatibility" },
-  "policies": ["standard-saas-v1", "strict-infrastructure-v1"],
-  "agentConsole": { "llmTouchpoints": ["plan (proposal only)", "brief (explain verified result)"], "llmOnWorkPath": false, "decisionMaker": "evaluatePolicy (deterministic)" },
+  "determinism": "score is a pure function of the report; buyer independently recomputes it from the report's own scoringBreakdown for BOTH services",
+  "agentConsole": { "llmTouchpoints": ["plan (proposal only)", "brief (explain verified result)"], "llmOnWorkPath": false, "decisionMaker": "evaluatePolicy (deterministic, service-scoped)" },
   "suites": [
     { "name": "runner self-test (legacy site_audit)", "command": "cd runner && node dist/selftest.js", "assertions": 7, "result": "pass" },
     { "name": "vendor assessment (fixtures + live example.com + SSRF)", "command": "cd runner && node dist/vendorTest.js", "assertions": 12, "result": "pass" },
-    { "name": "registry + policy + agent-plan validator", "command": "npm run test:services", "assertions": 22, "result": "pass" },
+    { "name": "web performance probe (fixtures + live example.com + SSRF)", "command": "cd runner && node dist/probeTest.js", "assertions": 9, "result": "pass" },
+    { "name": "registry + policy + agent-plan validator (both services)", "command": "npm run test:services", "assertions": 28, "result": "pass" },
     { "name": "work unit", "command": "npm run test:work", "assertions": 18, "result": "pass" },
     { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 35, "result": "pass", "mode": "devnet", "fallback": false },
+    { "name": "LIVE performance probe e2e (devnet)", "command": "npm run preflight:probe", "assertions": 29, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE buyer-agent console (plan fail-closed + honest agents + real console procurement)", "command": "npm run preflight:console", "assertions": 19, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE original privacy (devnet)", "command": "npm run preflight:e2e -- --require-ledger", "assertions": 11, "result": "pass", "mode": "devnet", "fallback": false }
   ],
+  "totals": { "suites": 9, "assertions": 168 },
   "liveOrigin": "https://tacit.80-225-209-190.sslip.io",
   "verifiedThroughHttps": true
 }

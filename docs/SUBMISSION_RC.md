@@ -1,5 +1,42 @@
 # Tacit — submission release candidate
 
+## Second real service: `web_performance_probe` — a new vertical, zero Daml changes (2026-07-12)
+
+Tacit is now a **two-market** exchange. Alongside vendor security, buyers can hire the
+same three provider agents for a **real web-performance measurement** — and this second
+market was added with **zero changes to the ledger model and zero new runtime
+dependencies**. Both services ride the *same frozen* `tacit-work` template; only
+`serviceType`, `serviceInput`, and `reportJson` differ.
+
+- **What the winner really does:** resolves the target with **SSRF-hard, IP-pinned**
+  networking, negotiates HTTP version via **ALPN**, and takes **5 timed samples**
+  (connect / TLS / TTFB / total, byte-capped) over fresh sockets. The report carries
+  per-sample numbers, min/median/max aggregates, transfer + caching posture, redirect
+  chain, findings, and a banded score.
+- **Determinism contract (identical to vendor):** the **score is a pure function of the
+  report** — every point is a line in `scoringBreakdown`. On acceptance the buyer
+  **recomputes the score from that breakdown** and rejects any mismatch, exactly as it
+  re-hashes the committed bytes. Timings are honest and vary; the *score* does not.
+- **Service-scoped policy:** `latency-slo-standard-v1` (default) / `latency-slo-strict-v1`.
+  `evaluatePolicy` dispatches by `report.service`; a policy from the wrong service is a
+  **precise error** ("standard-saas-v1 is not valid for service web_performance_probe"),
+  and `validateAgentPlan` refuses a cross-service policy up front.
+- **Every buyer surface:** `/work` service selector (vendor | performance) with a
+  perf `PerformanceSection` (aggregates, per-sample TTFB bars, transfer/caching chips);
+  the agent planner picks the service **by intent**; MCP gains `tacit_probe_performance`
+  (v0.5.0). **No LLM anywhere** in measurement, scoring, or policy.
+- **Proven live on devnet (example.com):** HTTP/2 · median TTFB **452 ms** · band
+  **fast** · score **100** · **0** findings · policy `latency-slo-standard-v1` →
+  **approve** · winner providerC @ **21.76 USD.demo** · `providerCommittedSha256 ==
+  buyerComputedSha256` `d391208e…`. `preflight:probe` **29/29**, vendor regression
+  `preflight:agentic` **35/35** — no fallback, no Daml change.
+- **Verify:** `APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-probe.mjs --require-ledger --require-runners`.
+  `npm run demo:check` now asserts **both** services at a 3-runner quorum.
+
+---
+
+
+
 ## Buyer Agent Console — a real LLM procurement agent (2026-07-12)
 
 `/work` is now **console-first**: an **Agent** tab (default) where you describe an
@@ -49,7 +86,7 @@ auditor gets the receipt, not the report. Frozen Daml packages unchanged.
 
 - **Live:** https://tacit.80-225-209-190.sslip.io/work · MCP `tacit_assess_vendor`.
 - **Proven live on devnet (through HTTPS):** agentic vendor e2e **35/35** + original
-  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (96 assertions across 6 suites).
+  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (168 assertions across 9 suites — two live services).
 - **Fresh live evidence (example.com):** real TLSv1.3 / Cloudflare cert / 48d · score
   59 "weak" · 8 findings · policy `standard-saas-v1` → **human_review** (score:59) ·
   winner providerC @ 20.77 USD.demo · `providerCommittedSha256 == buyerComputedSha256`
@@ -141,6 +178,8 @@ APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --r
 - The buyer acts through the **pinned buyer party**; a `buyerLabel` is a display label only.
 - Hash matching is performed by the **buyer application off-ledger**; the Receipt records acceptance of
   committed bytes, **not** objective report quality. Canton did not verify the report's correctness.
-- **`site_audit` is the only service adapter.**
+- **Two real service adapters** ship: `vendor_security_assessment` and
+  `web_performance_probe`. `site_audit` is retained for resumption/back-compat only.
+  Both real services are **passive/read-only** against the target (no auth, no writes).
 - Historical (already-accepted) report bodies are **not reconstructed** by the active-contract reader —
   a resumed job honestly reports this; fresh runs show the full report.
