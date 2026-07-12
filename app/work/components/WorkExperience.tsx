@@ -192,7 +192,10 @@ export function WorkExperience() {
           {restored && <RestoredBanner />}
           {brief && <AgentBrief brief={brief} />}
           <WorkResultView result={result} runners={runnersAtRun.current.length ? runnersAtRun.current : health?.runners || []} />
-          <div className="mt-8 flex justify-center"><NewButton onClick={startNew} label="New assessment" /></div>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <NewButton onClick={startNew} label="New assessment" />
+            <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>See this settle in the live market →</Link>
+          </div>
         </div>
       )}
       {phase === 'resumed' && result && <ResumedView result={result} onNew={startNew} restored={restored} />}
@@ -234,6 +237,7 @@ function ConsoleIdle(p: any) {
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11.5 }}>Devnet verified · no fallback</span>
         <Link href="/lens" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>Inspect ledger privacy →</Link>
+        <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>Live market →</Link>
       </div>
       <ByoAgentFooter url={p.url} budget={p.budget} policyId={p.policyId} />
     </motion.div>

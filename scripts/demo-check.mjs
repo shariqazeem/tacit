@@ -65,8 +65,19 @@ try {
   bad(`/api/work/services failed: ${String(e?.message || e)}`);
 }
 
+// 2c) live market (auditor economy) endpoint healthy
+try {
+  const r = await fetch(APP_URL + '/api/market/overview', { signal: AbortSignal.timeout(15000) });
+  const j = await r.json();
+  (j?.available === true && j?.viewer === 'auditor' && j?.totals && Array.isArray(j?.providers))
+    ? ok(`market overview live (auditor view · ${j.totals.completedJobs} jobs · ${j.totals.totalVolume} demo credits)`)
+    : bad(`/api/market/overview not healthy (${j?.reason || 'bad shape'})`);
+} catch (e) {
+  bad(`/api/market/overview failed: ${String(e?.message || e)}`);
+}
+
 // 3) key routes
-for (const [p, label] of [['/', 'landing /'], ['/work', 'product /work'], ['/lens', 'ledger lens /lens'], ['/api/health', '/api/health']]) {
+for (const [p, label] of [['/', 'landing /'], ['/work', 'product /work'], ['/lens', 'ledger lens /lens'], ['/market', 'live market /market'], ['/api/health', '/api/health']]) {
   (await head(p)) ? ok(`${label} → 200`) : bad(`${label} not 200`);
 }
 

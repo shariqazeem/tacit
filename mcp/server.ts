@@ -62,7 +62,7 @@ function appDownResult(e: unknown) {
 }
 
 // ── Server ────────────────────────────────────────────────────
-const server = new McpServer({ name: 'tacit', version: '0.5.0' });
+const server = new McpServer({ name: 'tacit', version: '0.6.0' });
 
 const HTTPS_RE = /^https:\/\/[^\s]{1,2048}$/i;
 const workJobId = () => `wjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -563,6 +563,74 @@ server.registerTool(
         verified: !!data.buyerVerification?.verified,
         settlementContractId: String(ev.settlementContractId ?? ''), receiptContractId: String(ev.receiptContractId ?? ''),
         privacy: 'report private to buyer + winner; auditor sees receipt only; sealed bids private per provider',
+      },
+    };
+  },
+);
+
+// ── tacit_market_overview ─────────────────────────────────────
+// A real agent capability: check provider track records + market liquidity from
+// the AUDITOR's lawful view before deciding whom to hire. Never exposes sealed
+// bids or report bodies — the ledger does not return them to the auditor.
+server.registerTool(
+  'tacit_market_overview',
+  {
+    description:
+      "The Tacit agent economy from the AUDITOR's chair — computed live from on-ledger contracts the auditor party can lawfully see (settlements + delivery receipts). Returns market totals, per-provider treasuries + win-shares, and recent delivery-receipt commitments (sha256 + byteLen + winner + amount). Sealed bids, bid prices, report bodies, and assessment targets NEVER appear — Canton will not return them to the auditor. Use it to check a provider's track record before procuring.",
+    inputSchema: {},
+    outputSchema: {
+      available: z.boolean(),
+      viewer: z.string(),
+      asOfUtc: z.string(),
+      completedJobs: z.number(),
+      totalVolume: z.number(),
+      currency: z.string(),
+      capableAgents: z.object({ ready: z.number(), total: z.number() }),
+      servicesLive: z.number(),
+      providers: z.array(z.object({ id: z.string(), label: z.string(), partyShort: z.string(), earned: z.number(), wins: z.number(), winShare: z.number(), ready: z.boolean(), servicesAdvertised: z.array(z.string()) })),
+      recentReceipts: z.array(z.object({ acceptedAtUtc: z.string(), receiptCidShort: z.string(), sha256Short: z.string(), byteLen: z.number(), winnerLabel: z.string().nullable(), amount: z.number().nullable(), serviceType: z.string().nullable() })),
+      degradation: z.array(z.string()),
+    },
+  },
+  async () => {
+    let data: any;
+    try {
+      const res = await fetchJson(`${APP_URL}/api/market/overview`, {}, 15000);
+      if (!res.ok || res.json?.available !== true) {
+        return { isError: true, content: [{ type: 'text' as const, text: `Market overview unavailable (no fabrication): ${res.json?.reason || `HTTP ${res.status}`}` }] };
+      }
+      data = res.json;
+    } catch (e) {
+      return appDownResult(e);
+    }
+    const providers = Array.isArray(data.providers) ? data.providers : [];
+    const receipts = Array.isArray(data.receipts) ? data.receipts : [];
+    const lines = [
+      `TACIT MARKET — auditor's lawful view (${data.viewer}) · as of ${data.asOfUtc}`,
+      `${data.totals.completedJobs} completed jobs · ${data.totals.totalVolume} ${data.currency} total volume · ${data.meta.capableAgents.ready}/${data.meta.capableAgents.total} agents ready · ${data.meta.servicesLive} services live.`,
+      '',
+      'Providers (treasury = auditor-derived sum of settlement amounts):',
+      ...providers.map((p: any) => `• ${p.label} (${p.partyShort}) — earned ${p.earned} ${data.currency} · ${p.wins} wins · ${Math.round(p.winShare * 100)}% share · ${p.ready ? 'ready' : 'idle'}`),
+      '',
+      `Recent delivery receipts (commitment only — report bodies never appear):`,
+      ...receipts.slice(0, 5).map((r: any) => `• ${r.acceptedAtUtc} · ${r.winnerLabel ?? '—'} · ${r.serviceType ?? '—'} · ${r.amount == null ? '—' : r.amount + ' ' + data.currency} · sha256 ${r.sha256Short} · ${r.byteLen} bytes · body SEALED`),
+    ];
+    if (Array.isArray(data.degradation) && data.degradation.length) lines.push('', 'Notes: ' + data.degradation.join('; '));
+    lines.push('', `Explore it: ${APP_URL}/market`);
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      structuredContent: {
+        available: true,
+        viewer: String(data.viewer),
+        asOfUtc: String(data.asOfUtc),
+        completedJobs: Number(data.totals.completedJobs ?? 0),
+        totalVolume: Number(data.totals.totalVolume ?? 0),
+        currency: String(data.currency ?? 'USD.demo'),
+        capableAgents: { ready: Number(data.meta?.capableAgents?.ready ?? 0), total: Number(data.meta?.capableAgents?.total ?? 0) },
+        servicesLive: Number(data.meta?.servicesLive ?? 0),
+        providers: providers.map((p: any) => ({ id: String(p.id), label: String(p.label), partyShort: String(p.partyShort), earned: Number(p.earned ?? 0), wins: Number(p.wins ?? 0), winShare: Number(p.winShare ?? 0), ready: !!p.ready, servicesAdvertised: Array.isArray(p.servicesAdvertised) ? p.servicesAdvertised.map(String) : [] })),
+        recentReceipts: receipts.slice(0, 20).map((r: any) => ({ acceptedAtUtc: String(r.acceptedAtUtc), receiptCidShort: String(r.receiptCidShort), sha256Short: String(r.sha256Short), byteLen: Number(r.byteLen ?? 0), winnerLabel: r.winnerLabel ?? null, amount: r.amount == null ? null : Number(r.amount), serviceType: r.serviceType ?? null })),
+        degradation: Array.isArray(data.degradation) ? data.degradation.map(String) : [],
       },
     };
   },
