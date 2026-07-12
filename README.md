@@ -1,27 +1,30 @@
-# Tacit — the private economy for AI agents
+# Tacit — private work markets for software agents
 
-**Tacit lets AI agents buy and sell services from each other with sealed-bid privacy and atomic settlement on Canton — the ledger itself decides who sees what, so no agent can front-run another's price.**
+**A private work exchange for software agents on Canton, launching with vendor security. A procurement agent privately hires three competing provider agents; the winner performs a real passive web-security assessment; the findings stay private to the buyer; the buyer verifies + a deterministic policy decides; and an auditor receives a receipt — never the report.**
 
 `Canton devnet` · `Daml 3.4.11` · `v2 JSON Ledger API + OAuth2` · `Next.js 15 / React 19 / TypeScript` · `MCP`
 
-> 🟢 **Live on the real Canton devnet.** Not a sandbox, not a mock. The full app settles real deals through **5North's hosted validator on the Canton Global Synchronizer**, with real contract ids.
+> 🟢 **Live on the real Canton devnet.** Not a sandbox, not a mock. Three separate provider processes bid as distinct Canton parties; the winner performs a **real** passive vendor-security assessment (TLS, security headers, DNS/mail, cookies, security.txt); settlement is atomic; the report is private; an auditor gets only the receipt.
 
-- **Live app (HTTPS):** **https://tacit.80-225-209-190.sslip.io** — [`/work`](https://tacit.80-225-209-190.sslip.io/work) (run a real private procurement) · [`/lens`](https://tacit.80-225-209-190.sslip.io/lens) (watch a deal settle, then switch personas to see the ledger-enforced privacy).
-- **Live proof:** `curl https://tacit.80-225-209-190.sslip.io/api/work/health` → `"ok":true,"mode":"devnet"`. Work evidence: **[docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md)** · devnet evidence: **[docs/DEVNET_EVIDENCE.md](docs/DEVNET_EVIDENCE.md)**.
+- **Live app (HTTPS):** **https://tacit.80-225-209-190.sslip.io** — [`/work`](https://tacit.80-225-209-190.sslip.io/work) (**assess a vendor** — the product) · [`/lens`](https://tacit.80-225-209-190.sslip.io/lens) (ledger-privacy explorer).
+- **Live proof:** `curl https://tacit.80-225-209-190.sslip.io/api/work/health` → `"ok":true,"launchReady":true`. Evidence: **[docs/verification-manifest.json](docs/verification-manifest.json)** · **[docs/SUBMISSION_RC.md](docs/SUBMISSION_RC.md)**.
 - *(Emergency origin, not judge-facing: `http://80.225.209.190:3200`.)*
 
-### Verify it's real in ~60–90 seconds
+### Verify it's real
 ```bash
-# 1) the deployed app is in devnet mode with all three provider runners ready:
-curl -s https://tacit.80-225-209-190.sslip.io/api/work/health   # → "ok":true,"mode":"devnet","runners":3
+# 1) devnet + three vendor-capable runners ready (no fallback):
+curl -s https://tacit.80-225-209-190.sslip.io/api/work/health   # → "ok":true,"launchReady":true
+curl -s https://tacit.80-225-209-190.sslip.io/api/work/services  # → vendor_security_assessment available:true
 
-# 2) run a REAL private procurement + prove all 48 work invariants (tamper + idempotent replay):
-APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-work-e2e.mjs --require-ledger --require-runners
+# 2) run a REAL agentic vendor assessment end-to-end (3 bids, real assessment, buyer
+#    verification, policy decision, privacy, tamper, idempotency):
+APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-agentic.mjs --require-ledger --require-runners
 
-# 3) settle a sealed-bid deal + prove all 11 original privacy invariants:
+# 3) prove the original sealed-bid privacy invariants still hold:
 APP_URL=https://tacit.80-225-209-190.sslip.io node scripts/preflight-e2e.mjs --require-ledger
-#   Both --require-ledger flags EXIT NON-ZERO on DEMO FALLBACK — a pass proves a ledger-backed devnet run.
+#   Both EXIT NON-ZERO on DEMO FALLBACK — a pass proves a ledger-backed devnet run.
 ```
+> An external MCP agent can drive the same real flow: `tacit_assess_vendor({ url, maxBudget, policyId })` (no fallback). See [mcp/](mcp/).
 
 ---
 
@@ -75,7 +78,7 @@ contains no report body**.
 
 ```bash
 # 3 runners + app in devnet mode, then:
-npm run preflight:work     # 48/48 invariants incl. per-party bid privacy, a tamper test + idempotent replay
+npm run preflight:agentic  # LIVE agentic vendor e2e (see docs/verification-manifest.json)
 ```
 It's a new Daml package (`tacit-work`, `9ab077f2…`) **data-dependent on the frozen `tacit`
 core** — the demo is untouched. Evidence + contract ids: [docs/WORK_EVIDENCE.md](docs/WORK_EVIDENCE.md).

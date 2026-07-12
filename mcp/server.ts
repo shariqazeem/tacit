@@ -62,7 +62,7 @@ function appDownResult(e: unknown) {
 }
 
 // ── Server ────────────────────────────────────────────────────
-const server = new McpServer({ name: 'tacit', version: '0.3.0' });
+const server = new McpServer({ name: 'tacit', version: '0.4.0' });
 
 const HTTPS_RE = /^https:\/\/[^\s]{1,2048}$/i;
 const workJobId = () => `wjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -387,6 +387,111 @@ server.registerTool(
         byteLength: data.artifact?.byteLength,
         verifiedThisRequest: !!data.artifact?.verifiedThisRequest,
         visibility: visSummary,
+      },
+    };
+  },
+);
+
+// ── Tacit Work — the AGENTIC vendor-security workflow (primary) ────────────────
+// tacit_list_services
+server.tool(
+  'tacit_list_services',
+  'List the registered work services Tacit can procure and whether each has a live 3-runner capability quorum on Canton devnet. The launch service is vendor_security_assessment (a passive vendor web-security pre-screen). No simulation, no private provider policy.',
+  async () => {
+    try {
+      const { json } = await fetchJson(`${APP_URL}/api/work/services`, {}, 8000);
+      const svcs = Array.isArray(json?.services) ? json.services : [];
+      return text([
+        `Registered services (default: ${json?.defaultService}):`,
+        ...svcs.map((s: any) => `• ${s.id} v${s.version}${s.legacy ? ' (legacy)' : ''} — ${s.available ? `AVAILABLE (${s.supportingRunners}/3 runners)` : `unavailable (${s.supportingRunners}/3 runners)`}`),
+        '',
+        'Use tacit_assess_vendor to run a real vendor_security_assessment (no fallback).',
+      ].join('\n'));
+    } catch (e) {
+      return appDownResult(e);
+    }
+  },
+);
+
+// tacit_assess_vendor
+const assessOut = {
+  ok: z.boolean(), mode: z.string(), jobId: z.string(), resumed: z.boolean(),
+  requestedUrl: z.string(), finalUrl: z.string().optional(),
+  score: z.number().optional(), riskBand: z.string().optional(),
+  decision: z.string().optional(), decisionReasons: z.array(z.string()).optional(),
+  findings: z.array(z.object({ id: z.string(), severity: z.string(), title: z.string(), remediation: z.string() })).optional(),
+  winner: z.string(), amount: z.number(), currency: z.string(),
+  providerCommittedSha256: z.string().optional(), buyerComputedSha256: z.string().nullable().optional(),
+  verified: z.boolean(), settlementContractId: z.string(), receiptContractId: z.string(),
+  privacy: z.string(),
+};
+
+server.registerTool(
+  'tacit_assess_vendor',
+  {
+    description:
+      'Procure a REAL passive vendor security assessment on Canton for onboarding due diligence. Three separate provider processes bid as distinct Canton parties; the winner performs a passive web-security pre-screen (TLS, headers, cookies, DNS/mail, security.txt); the buyer verifies hash + schema + target + score off-ledger before accepting; a deterministic buyer policy returns an onboarding decision; an auditor receives only the receipt. No fallback, no simulation, no LLM-invented facts. Can take ~15–45s. This is a passive pre-screen, NOT a penetration test or certification.',
+    inputSchema: {
+      url: z.string().regex(HTTPS_RE).describe('The vendor / API / MCP endpoint to assess (https:// only).'),
+      maxBudget: z.number().positive().max(10000).describe('Maximum budget in USD.demo (a demo voucher).'),
+      policyId: z.enum(['standard-saas-v1', 'strict-infrastructure-v1']).optional().describe('Onboarding policy (default standard-saas-v1).'),
+      jobId: z.string().regex(/^[A-Za-z0-9._:-]{3,64}$/).optional().describe('Optional idempotency key; reuse to safely resume (no double payment).'),
+      buyerLabel: z.string().max(64).optional().describe('Display label only — does NOT allocate a distinct Canton party.'),
+    },
+    outputSchema: assessOut,
+  },
+  async ({ url, maxBudget, policyId, jobId, buyerLabel }) => {
+    const id = jobId || workJobId();
+    let data: any;
+    try {
+      const res = await fetchJson(
+        `${APP_URL}/api/work/procure`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType: 'vendor_security_assessment', input: { url }, maxBudget, policyId, buyerName: buyerLabel, requestSource: 'mcp' }) },
+        150000,
+      );
+      if (!res.ok || !res.json?.ok) {
+        return { isError: true, content: [{ type: 'text' as const, text: `Vendor assessment failed (no fallback): ${res.json?.error || `HTTP ${res.status}`}\nJob id ${id} — reuse it to safely resume.` }] };
+      }
+      data = res.json;
+    } catch (e) {
+      return appDownResult(e);
+    }
+    if (data.artifact?.available && !data.buyerVerification?.verified) {
+      return { isError: true, content: [{ type: 'text' as const, text: 'Buyer verification did not pass — refusing to report a success.' }] };
+    }
+
+    const rep = data.artifact?.report; const ev = data.evidence || {}; const pol = data.policy;
+    const findings = Array.isArray(rep?.findings) ? rep.findings : [];
+    const lines = [
+      `VENDOR ASSESSMENT — ${url}  (${data.mode}${data.resumption?.resumed ? ' · resumed' : ''})`,
+      'Three separate provider processes bid as distinct Canton parties (one shared hosted-validator credential — not separate validators or organizations).',
+      `Winner ${data.winner?.providerLabel}: awarded and prepaid ${data.amount} ${data.currency} (a demo voucher, not real money).`,
+      '',
+    ];
+    if (data.artifact?.available && rep) {
+      lines.push(`Posture: ${rep.riskBand} · score ${rep.score}/100 · ${findings.length} finding(s).`);
+      if (pol) lines.push(`Onboarding decision (${pol.policyId}): ${pol.decision.toUpperCase()} — ${pol.reasonCodes.join(', ')}.`);
+      lines.push(`Buyer verified the exact delivered bytes off-ledger (hash + schema + target + score): committed ${rep && data.artifact.providerCommittedSha256?.slice(0, 12)}… == computed ${data.artifact.buyerComputedSha256?.slice(0, 12)}….`);
+      lines.push('Top findings: ' + findings.slice(0, 3).map((f: any) => `${f.severity}:${f.title}`).join(' · '));
+    } else {
+      lines.push('This job was already accepted; the report body is not reconstructed. Settlement + receipt below are real.');
+    }
+    lines.push('Report is private to buyer + winner; the auditor sees the receipt commitment, not the report.');
+    lines.push(`Settlement ${ev.settlementContractId} · Receipt ${ev.receiptContractId}`);
+
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      structuredContent: {
+        ok: true, mode: String(data.mode), jobId: String(data.jobId ?? id), resumed: !!data.resumption?.resumed,
+        requestedUrl: url, finalUrl: rep?.finalUrl,
+        score: rep?.score, riskBand: rep?.riskBand,
+        decision: pol?.decision, decisionReasons: pol?.reasonCodes,
+        findings: findings.map((f: any) => ({ id: f.id, severity: f.severity, title: f.title, remediation: f.remediation })),
+        winner: String(data.winner?.providerLabel ?? ''), amount: Number(data.amount ?? 0), currency: String(data.currency ?? 'USD.demo'),
+        providerCommittedSha256: data.artifact?.providerCommittedSha256, buyerComputedSha256: data.artifact?.buyerComputedSha256,
+        verified: !!data.buyerVerification?.verified,
+        settlementContractId: String(ev.settlementContractId ?? ''), receiptContractId: String(ev.receiptContractId ?? ''),
+        privacy: 'report private to buyer + winner; auditor sees receipt only; sealed bids private per provider',
       },
     };
   },

@@ -45,19 +45,19 @@ export function Hero() {
 
           {/* H1 */}
           <h1 className="t-display tacit-rise" style={{ color: C.ink, animationDelay: '0.08s' }}>
-            The private economy
+            Private work markets
             <br />
-            for AI agents.
+            for software agents.
           </h1>
 
           {/* Sub */}
           <p
             className="tacit-rise mt-6 text-[16px] leading-relaxed"
-            style={{ color: C.ink2, fontFamily: FONT.sans, maxWidth: '52ch', animationDelay: '0.14s' }}
+            style={{ color: C.ink2, fontFamily: FONT.sans, maxWidth: '54ch', animationDelay: '0.14s' }}
           >
-            Agents already buy data, compute, and services from each other. On a transparent chain,
-            every deal broadcasts your prices and partners. Tacit settles agent commerce privately —
-            enforced by the ledger, not the app.
+            Starting with vendor security. A procurement agent privately hires three competing provider
+            agents; the winner performs a real assessment; the findings stay private to the buyer; and
+            compliance receives a receipt — never the report. Enforced by Canton, not the app.
           </p>
 
           {/* Actions */}
@@ -74,7 +74,7 @@ export function Hero() {
                 className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline"
                 style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}
               >
-                Run real work
+                Assess a vendor
                 <span aria-hidden style={{ fontSize: 12 }}>→</span>
               </Link>
             </motion.span>
@@ -93,7 +93,7 @@ export function Hero() {
             className="tacit-rise mt-14 text-[12px]"
             style={{ color: C.ink3, fontFamily: FONT.mono, letterSpacing: '0.02em', animationDelay: '0.28s' }}
           >
-            3 live providers · Real fulfillment · Private delivery
+            Vendor security · Sealed bids · Private delivery · Auditor receipt
           </div>
         </div>
       </div>

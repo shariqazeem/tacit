@@ -16,8 +16,9 @@ import {
   create, exercise, queryAs, ensureParty, pinnedParty, partyHint, T, PACKAGE_ID, LEDGER_MODE_ACTIVE, ledgerReachable,
 } from './client';
 import {
-  WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type SiteAuditReport, type BidView,
+  WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type ServiceReport, type BidView,
 } from './workTypes';
+import { getService, evaluatePolicy, POLICY_IDS, VENDOR_SERVICE, type PolicyId, type PolicyResult, type VendorSecurityAssessmentReport } from '@/shared/services';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
 const CORE_PKG_ID = PACKAGE_ID || 'fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff';
@@ -57,9 +58,18 @@ const cidMap = (): Record<Persona, string[]> => ({ buyer: [], providerA: [], pro
 export interface WorkParams {
   jobId: string;
   serviceType: string;
-  input: { url?: string };
+  input: { url: string };
   maxBudget: number;
   buyerName?: string;
+  requestSource?: 'browser' | 'mcp';
+  policyId?: PolicyId;
+}
+
+/** Buyer's deep acceptance verification (order matters; ALL must pass to Accept). */
+function recomputeVendorScoreOk(r: VendorSecurityAssessmentReport): boolean {
+  const sum = Math.max(0, Math.min(100, Math.round((r.scoringBreakdown || []).reduce((s, c) => s + c.points, 0))));
+  const criticalTransport = (r.scoringBreakdown || []).some((c) => c.key === 'tls_broken' || c.key === 'cert_expired');
+  return r.score === (criticalTransport ? Math.min(sum, 39) : sum);
 }
 
 export async function procureWork(
@@ -68,9 +78,12 @@ export async function procureWork(
 ): Promise<WorkResult> {
   if (LEDGER_MODE_ACTIVE === 'sandbox') throw new Error('tacit-work requires devnet/canton3-local (v2 ledger), not sandbox');
   if (!(await ledgerReachable())) throw new Error('ledger unreachable — tacit-work has no fallback');
-  if (params.serviceType !== 'site_audit') throw new Error(`unsupported serviceType ${params.serviceType}`);
-  const url = String(params.input?.url || '');
-  if (!/^https:\/\//i.test(url)) throw new Error('input.url must be an https:// URL');
+  // Registry validation — only an allowlisted, registered service may be procured.
+  const svc = getService(params.serviceType);
+  if (!svc) throw new Error(`unregistered serviceType ${params.serviceType}`);
+  const inputVal = svc.validateInput(params.input);
+  if (inputVal.ok !== true) throw new Error(inputVal.error);
+  const url = inputVal.value.url;
 
   const bidTimeout = opts.bidTimeoutMs ?? 45_000;
   const delivTimeout = opts.deliveryTimeoutMs ?? 45_000;
@@ -87,7 +100,7 @@ export async function procureWork(
   const invited = [pA, pB, pC];
   const label: Record<string, string> = { [pA]: 'providerA', [pB]: 'providerB', [pC]: 'providerC' };
   const rfsId = `WRK-${params.jobId}`;
-  const serviceInput = JSON.stringify({ url });
+  const serviceInput = svc.canonicalInput(inputVal.value); // canonical, bound to the ActiveWorkRequest
   let resumed = false;
 
   const personaParties: { key: Persona; party: string }[] = [
@@ -220,11 +233,32 @@ export async function procureWork(
   }
 
   const deliveryCid = delivery?.contractId || '';
+
+  // Buyer acceptance verification — in order: hash → length → strict parse → schema →
+  // request/report binding → deterministic score recompute. ALL must pass before Accept.
+  const bv = { hashOk: false, lengthOk: false, schemaOk: false, bindingOk: false, scoreOk: false, verified: false };
+  let verifiedReport: VendorSecurityAssessmentReport | null = null;
+  if (delivery) {
+    const hl = verifyDelivery(reportJson, reportSha, reportLen);
+    bv.hashOk = hl.computedSha === reportSha;
+    bv.lengthOk = hl.computedLen === reportLen;
+    const parsed = safeParse(reportJson);
+    const schemaVal = parsed != null ? svc.validateReport(parsed) : ({ ok: false, error: 'unparseable' } as const);
+    bv.schemaOk = schemaVal.ok === true;
+    bv.bindingOk = schemaVal.ok === true && svc.bindsToRequest(schemaVal.value, inputVal.value).ok === true;
+    if (params.serviceType === VENDOR_SERVICE) {
+      bv.scoreOk = schemaVal.ok === true && recomputeVendorScoreOk(schemaVal.value as VendorSecurityAssessmentReport);
+      if (schemaVal.ok === true) verifiedReport = schemaVal.value as VendorSecurityAssessmentReport;
+    } else {
+      bv.scoreOk = true; // legacy site_audit has no scoring breakdown to recompute
+    }
+    bv.verified = bv.hashOk && bv.lengthOk && bv.schemaOk && bv.bindingOk && bv.scoreOk;
+  }
+
   if (delivery && !receipt) {
-    const check = verifyDelivery(reportJson, reportSha, reportLen);
-    if (!check.ok) {
+    if (!bv.verified) {
       throw new Error(
-        `delivery hash/length verification FAILED (computed ${check.computedSha.slice(0, 12)}… vs committed ${reportSha.slice(0, 12)}…) — refusing to accept`,
+        `delivery verification FAILED (hash=${bv.hashOk} length=${bv.lengthOk} schema=${bv.schemaOk} binding=${bv.bindingOk} score=${bv.scoreOk}) — refusing to accept`,
       );
     }
     const receiptCid: string = await exercise(TW.PrivateDelivery, deliveryCid, 'Accept', { acceptedAt: new Date().toISOString() }, [buyer]);
@@ -236,7 +270,27 @@ export async function procureWork(
 
   // ── assemble the honest contract ─────────────────────────────────────────────
   const reportAvailable = !!delivery; // real bytes were loaded (and re-hashed) THIS request
-  const report = reportAvailable ? (safeParse(reportJson) as SiteAuditReport | null) : null;
+  const report = reportAvailable ? (safeParse(reportJson) as ServiceReport | null) : null;
+
+  // Deterministic buyer policy decision — only from a VERIFIED vendor report.
+  const policyId: PolicyId = params.policyId && POLICY_IDS.includes(params.policyId) ? params.policyId : 'standard-saas-v1';
+  const policy: PolicyResult | null = verifiedReport ? evaluatePolicy(policyId, verifiedReport, new Date().toISOString()) : null;
+
+  // agentTrace — ONLY events that actually occurred (no fabricated reasoning).
+  const agentTrace: { step: string; detail: string }[] = [
+    { step: 'request_opened', detail: rfsId },
+    { step: 'bids_received', detail: `${collectedBids.length} sealed bids collected this request` },
+    { step: 'award_settled', detail: `${settlementCid.slice(0, 12)}…` },
+    { step: 'assignment_created', detail: `${assignmentCid.slice(0, 12)}…` },
+    ...(reportAvailable
+      ? [
+          { step: 'delivery_received', detail: `${deliveryCid.slice(0, 12)}…` },
+          { step: 'delivery_verified', detail: `hash+length+schema+binding${params.serviceType === VENDOR_SERVICE ? '+score' : ''} verified` },
+          { step: 'receipt_created', detail: `${receipt!.contractId.slice(0, 12)}…` },
+        ]
+      : [{ step: 'resumed', detail: 'existing receipt recovered (report body not reloaded)' }]),
+    ...(policy ? [{ step: 'policy_evaluated', detail: `${policy.policyId} → ${policy.decision}` }] : []),
+  ];
 
   return {
     ok: true,
@@ -246,6 +300,8 @@ export async function procureWork(
     rfsId,
     workPackage: WORK_PKG,
     serviceType: params.serviceType,
+    serviceVersion: svc.version,
+    requestSource: params.requestSource || 'browser',
     buyerLabel: params.buyerName || 'Buyer',
     input: { url },
     parties: { buyer, providerA: pA, providerB: pB, providerC: pC, auditor },
@@ -256,8 +312,15 @@ export async function procureWork(
     artifact: {
       available: reportAvailable,
       report,
+      // provider's on-ledger commitment vs the buyer's INDEPENDENT computation
+      // (null on a resume where the report bytes weren't reloaded). Never the same
+      // value rendered twice under two labels.
       sha256: reportSha,
+      providerCommittedSha256: reportSha,
+      buyerComputedSha256: reportAvailable ? sha256Hex(reportJson) : null,
       byteLength: reportLen,
+      providerCommittedByteLength: reportLen,
+      buyerComputedByteLength: reportAvailable ? Buffer.byteLength(reportJson, 'utf8') : null,
       verifiedThisRequest: reportAvailable,
     },
     evidence: {
@@ -273,6 +336,9 @@ export async function procureWork(
       resumed,
       historicalArtifactNotLoaded: !reportAvailable,
     },
+    buyerVerification: bv,
+    policy,
+    agentTrace,
     visibility: {
       available: didAward,
       personas: [...WORK_PERSONAS],
@@ -283,6 +349,58 @@ export async function procureWork(
       privateDelivery: visDelivery,
       receipt: visReceipt,
     },
+  };
+}
+
+/**
+ * Read-only, LEDGER-DERIVED progress for a jobId. A stage is `true` only when its
+ * real contract exists on-ledger (a later stage implies all earlier ones). No
+ * timers, no fabrication. Used by /api/work/status for honest browser telemetry.
+ */
+export interface WorkStatus {
+  jobId: string;
+  bidsSeen: number;
+  stages: {
+    request_opened: boolean;
+    bids_received: boolean;
+    award_settled: boolean;
+    assignment_created: boolean;
+    delivery_received: boolean;
+    receipt_created: boolean;
+  };
+  completed: boolean;
+}
+
+export async function workStatus(jobId: string): Promise<WorkStatus> {
+  const buyer = pinnedParty('Buyer');
+  if (!buyer) throw new Error('buyer party not configured');
+  const rfsId = `WRK-${jobId}`;
+  const [bids, settlement, assignment, delivery, receipt, awr] = await Promise.all([
+    queryAs(buyer, [T.SealedBid], { rfsId }),
+    queryAs(buyer, [T.Settlement], { rfsId }),
+    queryAs(buyer, [TW.Assignment], { jobId }),
+    queryAs(buyer, [TW.PrivateDelivery], { jobId }),
+    queryAs(buyer, [TW.DeliveryReceipt], { jobId }),
+    queryAs(buyer, [TW.ActiveWorkRequest], { jobId }),
+  ]);
+  const hasReceipt = receipt.length > 0;
+  const hasDelivery = delivery.length > 0 || hasReceipt; // delivery is consumed by Accept
+  const hasAssign = assignment.length > 0 || hasReceipt; // assignment persists after delivery
+  const hasSettle = settlement.length > 0 || hasAssign;
+  const hasBids = bids.length >= 3 || hasSettle;
+  const hasRequest = awr.length > 0 || hasSettle || hasAssign;
+  return {
+    jobId,
+    bidsSeen: bids.length,
+    stages: {
+      request_opened: hasRequest,
+      bids_received: hasBids,
+      award_settled: hasSettle,
+      assignment_created: hasAssign,
+      delivery_received: hasDelivery,
+      receipt_created: hasReceipt,
+    },
+    completed: hasReceipt,
   };
 }
 

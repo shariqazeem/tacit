@@ -21,7 +21,9 @@
     "mcp:build": "npm --prefix mcp install && npm --prefix mcp run build",
     "mcp:start": "node mcp/dist/server.js",
     "test:work": "node scripts/test-work-unit.mjs",
-    "demo:check": "node scripts/demo-check.mjs"
+    "demo:check": "node scripts/demo-check.mjs",
+    "test:services": "node scripts/test-services.mjs",
+    "preflight:agentic": "node scripts/preflight-agentic.mjs --require-ledger --require-runners"
   },
   "dependencies": {
     "framer-motion": "^12.23.24",

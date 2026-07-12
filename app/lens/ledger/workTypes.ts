@@ -8,23 +8,10 @@ export const WORK_SCHEMA = 2;
 export const WORK_PERSONAS = ['buyer', 'providerA', 'providerB', 'providerC', 'auditor'] as const;
 export type Persona = (typeof WORK_PERSONAS)[number];
 
-/** The real `site_audit` report the winning runner produces (see runner/src/audit.ts). */
-export interface SiteAuditReport {
-  service: 'site_audit';
-  version: number;
-  requestedUrl: string;
-  finalUrl: string;
-  httpStatus: number;
-  responseLatencyMs: number;
-  contentType: string | null;
-  sampledByteLength: number;
-  pageTitle: string | null;
-  https: boolean;
-  securityHeaders: Record<string, boolean>;
-  findings: string[];
-  score: number;
-  auditedAtUtc: string;
-}
+// Report types come from the shared registered-service contract (discriminated by
+// `service` + `version`), so the app, MCP, runner and UI never diverge.
+import type { ServiceReport, PolicyResult } from '@/shared/services';
+export type { ServiceReport, SiteAuditReport, VendorSecurityAssessmentReport, PolicyResult } from '@/shared/services';
 
 export interface BidView {
   provider: string; // full party id
@@ -42,9 +29,13 @@ export interface BidView {
  */
 export interface WorkArtifact {
   available: boolean;
-  report: SiteAuditReport | null;
-  sha256: string; // the on-ledger commitment (from delivery or receipt)
-  byteLength: number;
+  report: ServiceReport | null;
+  sha256: string; // the on-ledger commitment (alias of providerCommittedSha256; kept for compat)
+  providerCommittedSha256: string; // the provider's on-ledger commitment
+  buyerComputedSha256: string | null; // buyer's INDEPENDENT hash this request (null on resume)
+  byteLength: number; // the provider's committed byte length
+  providerCommittedByteLength: number;
+  buyerComputedByteLength: number | null;
   verifiedThisRequest: boolean; // true only when the buyer re-hashed the real bytes THIS request
 }
 
@@ -62,6 +53,21 @@ export interface WorkResumption {
   resumed: boolean;
   /** True when this was a replay whose accepted report body could not be reloaded. */
   historicalArtifactNotLoaded: boolean;
+}
+
+/** Buyer's deep acceptance verification — each check is independent and must pass. */
+export interface BuyerVerification {
+  hashOk: boolean;
+  lengthOk: boolean;
+  schemaOk: boolean;
+  bindingOk: boolean;
+  scoreOk: boolean;
+  verified: boolean;
+}
+
+export interface AgentTraceEvent {
+  step: string;
+  detail: string;
 }
 
 /**
@@ -98,6 +104,8 @@ export interface WorkResult {
   rfsId: string;
   workPackage: string;
   serviceType: string;
+  serviceVersion: number;
+  requestSource: 'browser' | 'mcp';
   buyerLabel: string; // display label only — the workflow acts as the pinned buyer party
   input: { url: string };
   parties: WorkParties;
@@ -108,6 +116,9 @@ export interface WorkResult {
   artifact: WorkArtifact;
   evidence: WorkEvidence;
   resumption: WorkResumption;
+  buyerVerification: BuyerVerification;
+  policy: PolicyResult | null;
+  agentTrace: AgentTraceEvent[];
   visibility: VisibilitySnapshot;
 }
 
@@ -125,6 +136,13 @@ export interface RunnerHealth {
   pid: number;
   partyShort: string;
   ledgerMode: string;
+  services?: string[]; // advertised capabilities
+  state?: string; // ready | busy | degraded | starting
+}
+
+export interface ServiceQuorum {
+  supported: number; // distinct ready runners advertising this service
+  quorum: boolean; // >= 3 distinct capable runners
 }
 
 export interface WorkHealth {
@@ -137,7 +155,13 @@ export interface WorkHealth {
   runners: RunnerHealth[];
   distinctInstances: boolean;
   distinctProcesses: boolean;
-  /** Precise reason when ok === false, for the /work unavailable state. */
+  /** Per-service capability quorum (3 distinct ready runners advertising it). */
+  serviceQuorum: Record<string, ServiceQuorum>;
+  /** The default launch service id. */
+  launchService: string;
+  /** True when base readiness holds AND the launch service has a 3-runner quorum. */
+  launchReady: boolean;
+  /** Precise reason when ok === false OR launchReady === false. */
   reason?: string;
 }
 
