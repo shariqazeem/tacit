@@ -62,3 +62,4 @@ p2p.key
 # working strategy doc (not part of the build)
 TACIT_FIRST_PLACE_BUILD_STRATEGY_AND_PROMPTS.md
 runner/src/_shared.ts
+runner/src/_market.ts

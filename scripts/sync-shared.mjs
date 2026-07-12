@@ -6,8 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = resolve(here, '../shared/services.ts');
-const dst = resolve(here, '../runner/src/_shared.ts');
-const body = readFileSync(src, 'utf8');
-writeFileSync(dst, `// GENERATED from shared/services.ts — DO NOT EDIT. Regenerate: node scripts/sync-shared.mjs\n${body}`);
-console.log('synced shared/services.ts -> runner/src/_shared.ts');
+
+// The runner build (NodeNext) compiles every file under src/, so copying a pure
+// shared module here gives the .mjs unit tests a compiled JS artifact to import
+// (runner/dist/_*.js) — the exact code the app imports directly via @/shared/*.
+const files = [
+  { src: 'shared/services.ts', dst: 'runner/src/_shared.ts' },
+  { src: 'shared/market.ts', dst: 'runner/src/_market.ts' },
+];
+for (const { src, dst } of files) {
+  const body = readFileSync(resolve(here, '..', src), 'utf8');
+  writeFileSync(resolve(here, '..', dst), `// GENERATED from ${src} — DO NOT EDIT. Regenerate: node scripts/sync-shared.mjs\n${body}`);
+  console.log(`synced ${src} -> ${dst}`);
+}
