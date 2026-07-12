@@ -61,7 +61,7 @@ export interface WorkParams {
   input: { url: string };
   maxBudget: number;
   buyerName?: string;
-  requestSource?: 'browser' | 'mcp';
+  requestSource?: 'browser' | 'mcp' | 'console';
   policyId?: PolicyId;
 }
 

@@ -105,7 +105,7 @@ export interface WorkResult {
   workPackage: string;
   serviceType: string;
   serviceVersion: number;
-  requestSource: 'browser' | 'mcp';
+  requestSource: 'browser' | 'mcp' | 'console';
   buyerLabel: string; // display label only — the workflow acts as the pinned buyer party
   input: { url: string };
   parties: WorkParties;

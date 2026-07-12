@@ -57,6 +57,11 @@ export function validateHttpsUrl(raw: unknown): Validation<UrlServiceInput> {
   if (u.username || u.password) return { ok: false, error: 'input.url must not contain credentials' };
   if (u.port && u.port !== '443') return { ok: false, error: 'only port 443 is allowed' };
   if (!u.hostname || u.hostname.length > 253 || !u.hostname.includes('.')) return { ok: false, error: 'input.url has an invalid host' };
+  // First-line SSRF defense (the runner's network layer still does full DNS-resolution
+  // checks + IP pinning): reject IP-literal + loopback hosts syntactically.
+  const host = u.hostname.toLowerCase();
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return { ok: false, error: 'IP-literal hosts are not allowed' };
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return { ok: false, error: 'loopback hosts are not allowed' };
   return { ok: true, value: { url } };
 }
 
@@ -377,5 +382,61 @@ export function evaluatePolicy(policyId: PolicyId, report: VendorSecurityAssessm
     policyId, policyVersion: POLICY_VERSION, decision,
     reasonCodes, requiredActions, decidedAtUtc, statement: STATEMENT,
     scoreConsidered: score, riskBandConsidered: report.riskBand,
+  };
+}
+
+// ── Buyer Agent Console: plan validation (pure; the HARD gate) ───────────────
+// The LLM only PROPOSES a mandate from a natural-language goal. This validator is
+// the security boundary: it re-checks everything against the registry regardless
+// of what the model returned, and fails closed. Nothing here spends anything.
+export const PLAN_BUDGET_MIN = 1;
+export const PLAN_BUDGET_MAX = 10000;
+
+export interface AgentProposal {
+  serviceType: ServiceId;
+  input: { url: string };
+  policyId: PolicyId;
+  maxBudget: number;
+  confidence: number | null; // 0..1 or null
+  assumptions: string[];
+}
+
+export type PlanValidation = { ok: true; proposal: AgentProposal } | { ok: false; reason: string };
+
+/**
+ * Validate a model-proposed mandate. `isAvailable(serviceId)` reports the live
+ * 3-runner capability quorum (passed in so this stays pure + testable). Legacy
+ * services are never offered to new mandates.
+ */
+export function validateAgentPlan(raw: unknown, isAvailable: (serviceId: string) => boolean): PlanValidation {
+  if (typeof raw !== 'object' || raw === null) return { ok: false, reason: 'the planner did not return a JSON object' };
+  const r = raw as any;
+
+  const serviceType = typeof r.serviceType === 'string' ? r.serviceType.trim() : '';
+  const svc = getService(serviceType);
+  if (!svc) return { ok: false, reason: `unsupported service "${serviceType || '?'}" — only vendor_security_assessment is offered` };
+  if (svc.legacy) return { ok: false, reason: `"${serviceType}" is a legacy service and is not offered to new mandates` };
+
+  const inputVal = svc.validateInput(r.input);
+  if (inputVal.ok !== true) return { ok: false, reason: inputVal.error };
+
+  const policyId = typeof r.policyId === 'string' ? r.policyId.trim() : '';
+  if (!(POLICY_IDS as string[]).includes(policyId)) return { ok: false, reason: `unknown policy "${policyId || '?'}"` };
+
+  const budget = Number(r.maxBudget);
+  if (!Number.isFinite(budget) || budget < PLAN_BUDGET_MIN || budget > PLAN_BUDGET_MAX) {
+    return { ok: false, reason: `budget must be ${PLAN_BUDGET_MIN}–${PLAN_BUDGET_MAX} demo credits (got ${r.maxBudget})` };
+  }
+
+  if (!isAvailable(serviceType)) return { ok: false, reason: `${serviceType} is not ready right now (needs 3 live provider agents)` };
+
+  const confidence = Number.isFinite(Number(r.confidence)) ? Math.max(0, Math.min(1, Number(r.confidence))) : null;
+  const assumptions = Array.isArray(r.assumptions)
+    ? r.assumptions.filter((a: any) => typeof a === 'string' && a.trim()).slice(0, 6).map((a: string) => a.trim().slice(0, 200))
+    : [];
+
+  return {
+    ok: true,
+    proposal: { serviceType: serviceType as ServiceId, input: { url: inputVal.value.url }, policyId: policyId as PolicyId, maxBudget: Math.round(budget), confidence, assumptions },
   };
 }

@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const input = body?.input && typeof body.input === 'object' ? body.input : {};
   const rawBudget = body?.maxBudget;
   const buyerName = typeof body?.buyerName === 'string' ? body.buyerName.slice(0, 64) : undefined;
-  const requestSource = body?.requestSource === 'mcp' ? 'mcp' : 'browser';
+  const requestSource = ['mcp', 'console'].includes(body?.requestSource) ? body.requestSource : 'browser';
   const policyId: PolicyId | undefined = POLICY_IDS.includes(body?.policyId) ? body.policyId : undefined;
 
   if (!jobId) return fail('jobId required ([A-Za-z0-9._:-]{3,64})', 400);
