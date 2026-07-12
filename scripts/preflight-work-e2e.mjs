@@ -94,11 +94,19 @@ must(art.verifiedThisRequest === true, 'buyer OFF-LEDGER verification passed thi
 // ── 4) visibility invariants (from real per-persona snapshots) ───────────────
 console.log('\nVisibility (real per-persona ledger reads):');
 must(vis.available === true, 'visibility snapshot available (fresh run)');
-// sealed bids: buyer sees all three, each provider only its own, auditor none
-must((vis.bids?.buyer || []).length === 3, 'buyer sees all THREE sealed bids');
-must((vis.bids?.providerA || []).length === 1, 'Provider A sees exactly ONE bid (its own)');
-must((vis.bids?.providerB || []).length === 1, 'Provider B sees exactly ONE bid (its own)');
-must((vis.bids?.providerC || []).length === 1, 'Provider C sees exactly ONE bid (its own)');
+// sealed-bid privacy invariant (robust to a provider bidding more than once):
+//   buyer sees every bid; NO provider sees a competitor's bid; auditor sees none.
+const bBuyer = new Set(vis.bids?.buyer || []);
+const bA = new Set(vis.bids?.providerA || []);
+const bB = new Set(vis.bids?.providerB || []);
+const bC = new Set(vis.bids?.providerC || []);
+const disjoint = (x, y) => [...x].every((c) => !y.has(c));
+const awarded = (w.bids || []).map((b) => b.contractId);
+must(awarded.every((c) => bBuyer.has(c)) && bBuyer.size >= 3, "buyer sees all providers' sealed bids");
+must(bA.size >= 1 && disjoint(bA, bB) && disjoint(bA, bC), "Provider A sees only its own bid(s), never a competitor's");
+must(bB.size >= 1 && disjoint(bB, bA) && disjoint(bB, bC), "Provider B sees only its own bid(s), never a competitor's");
+must(bC.size >= 1 && disjoint(bC, bA) && disjoint(bC, bB), "Provider C sees only its own bid(s), never a competitor's");
+must([...bA, ...bB, ...bC].every((c) => bBuyer.has(c)), "buyer's view is a superset of every provider's");
 must((vis.bids?.auditor || []).length === 0, 'Auditor sees ZERO sealed bids');
 // receipt + private delivery
 must(vis.receipt?.buyer && vis.receipt?.[winnerLabel] && vis.receipt?.auditor, 'receipt visible to buyer + winner + auditor');
