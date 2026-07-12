@@ -16,18 +16,19 @@
   "legacyService": { "id": "site_audit", "retained": "resumption + backward compatibility" },
   "determinism": "score is a pure function of the report; buyer independently recomputes it from the report's own scoringBreakdown for BOTH services",
   "agentConsole": { "llmTouchpoints": ["plan (proposal only)", "brief (explain verified result)"], "llmOnWorkPath": false, "decisionMaker": "evaluatePolicy (deterministic, service-scoped)" },
+  "countingMethod": "one assertion per individual check line; suite summary lines are not counted",
   "suites": [
     { "name": "runner self-test (legacy site_audit)", "command": "cd runner && node dist/selftest.js", "assertions": 7, "result": "pass" },
     { "name": "vendor assessment (fixtures + live example.com + SSRF)", "command": "cd runner && node dist/vendorTest.js", "assertions": 12, "result": "pass" },
     { "name": "web performance probe (fixtures + live example.com + SSRF)", "command": "cd runner && node dist/probeTest.js", "assertions": 9, "result": "pass" },
     { "name": "registry + policy + agent-plan validator (both services)", "command": "npm run test:services", "assertions": 28, "result": "pass" },
     { "name": "work unit", "command": "npm run test:work", "assertions": 18, "result": "pass" },
-    { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 35, "result": "pass", "mode": "devnet", "fallback": false },
-    { "name": "LIVE performance probe e2e (devnet)", "command": "npm run preflight:probe", "assertions": 29, "result": "pass", "mode": "devnet", "fallback": false },
-    { "name": "LIVE buyer-agent console (plan fail-closed + honest agents + real console procurement)", "command": "npm run preflight:console", "assertions": 19, "result": "pass", "mode": "devnet", "fallback": false },
+    { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 34, "result": "pass", "mode": "devnet", "fallback": false },
+    { "name": "LIVE performance probe e2e (devnet)", "command": "npm run preflight:probe", "assertions": 28, "result": "pass", "mode": "devnet", "fallback": false },
+    { "name": "LIVE buyer-agent console (key-aware: fail-closed hard gate + honest agents OR real hard-gated proposal + real console procurement)", "command": "npm run preflight:console", "assertions": 18, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE original privacy (devnet)", "command": "npm run preflight:e2e -- --require-ledger", "assertions": 11, "result": "pass", "mode": "devnet", "fallback": false }
   ],
-  "totals": { "suites": 9, "assertions": 168 },
+  "totals": { "suites": 9, "assertions": 165 },
   "liveOrigin": "https://tacit.80-225-209-190.sslip.io",
   "verifiedThroughHttps": true
 }

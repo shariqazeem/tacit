@@ -68,9 +68,12 @@ timers). The console and MCP `tacit_assess_vendor` are the same buyer path, two 
   `TACIT_LLM_PROVIDER`, `TACIT_LLM_MODEL`, `TACIT_LLM_API_KEY`, `TACIT_LLM_BASE_URL`.
   Falls back to the existing `GRADIENT_*` config, so it deploys without re-provisioning.
 - **Verified:** `npm run preflight:console` (plan fails closed on hostile inputs incl.
-  prompt-injection + SSRF; agents fail honestly without a key; a real `requestSource=console`
-  procurement completes with the deterministic policy + buyer verification). Plan-validator
-  unit tests in `npm run test:services`. Frozen Daml unchanged.
+  prompt-injection + SSRF; **key-aware** — asserts honest failure when no key is set AND,
+  when a key IS set, that any returned proposal independently re-passes the pure hard gate
+  and carries no decision/score/price; a real `requestSource=console` procurement completes
+  with the deterministic policy + buyer verification). Plan-validator unit tests in
+  `npm run test:services`. Frozen Daml unchanged. **The deployed VM now has a real LLM key,
+  so the Agent tab is live** (proposal only — validation remains authoritative).
 
 ---
 
@@ -86,7 +89,7 @@ auditor gets the receipt, not the report. Frozen Daml packages unchanged.
 
 - **Live:** https://tacit.80-225-209-190.sslip.io/work · MCP `tacit_assess_vendor`.
 - **Proven live on devnet (through HTTPS):** agentic vendor e2e **35/35** + original
-  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (168 assertions across 9 suites — two live services).
+  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (165 assertions across 9 suites — two live services).
 - **Fresh live evidence (example.com):** real TLSv1.3 / Cloudflare cert / 48d · score
   59 "weak" · 8 findings · policy `standard-saas-v1` → **human_review** (score:59) ·
   winner providerC @ 20.77 USD.demo · `providerCommittedSha256 == buyerComputedSha256`

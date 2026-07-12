@@ -39,15 +39,40 @@ must(validateAgentPlan(good, () => false).ok === false, 'no capability quorum �
 const inj = validateAgentPlan({ ...good, approve: true, decision: 'approve' }, YES);
 must(inj.ok === true && !('approve' in inj.proposal) && !('decision' in inj.proposal), 'prompt-injection extra fields do not leak into the mandate');
 
-// ── 2) agent endpoints fail honestly without a key (no fabrication) ──────────
-console.log('\nAgent endpoints (honest failure without an LLM key):');
-const plan = await post('/api/agent/plan', { goalText: 'onboard acme.com, budget 25, strict infra' }, 40000);
-must(plan.json && plan.json.ok === false && typeof plan.json.reason === 'string', 'without a key, /api/agent/plan returns {ok:false, reason} — never a fabricated proposal');
-must(!plan.json?.proposal, '/api/agent/plan does not return a proposal on failure');
-const brief = await post('/api/agent/brief', { workResult: { ok: true, policy: { decision: 'approve' }, artifact: { report: { score: 90 } }, input: { url: 'https://acme.com' } } }, 40000);
-must(brief.json && brief.json.ok === false && !brief.json.brief, 'without a key, /api/agent/brief returns {ok:false} and no brief — the verified result stands alone');
+// ── 2) agent endpoints behave honestly — adaptive to whether a key is set ────
+// A 503 from /plan means the planner is unconfigured; anything else means a real
+// LLM is wired. We assert the correct honest behavior for whichever mode is live,
+// so this passes both in CI (no key) and on the deployed VM (real key).
 const badPlan = await post('/api/agent/plan', { goalText: 'x' }, 15000);
 must(badPlan.status === 400 && badPlan.json?.ok === false, 'a too-short goal is a clean 400, not a crash');
+
+const plan = await post('/api/agent/plan', { goalText: 'check whether https://acme.com is fast enough for our users, budget 25' }, 40000);
+const llmConfigured = plan.status !== 503;
+
+if (!llmConfigured) {
+  console.log('\nAgent endpoints (no LLM key — honest failure, never fabrication):');
+  must(plan.json && plan.json.ok === false && typeof plan.json.reason === 'string', 'without a key, /api/agent/plan returns {ok:false, reason} — never a fabricated proposal');
+  must(!plan.json?.proposal, '/api/agent/plan does not return a proposal on failure');
+  const brief = await post('/api/agent/brief', { workResult: { ok: true, policy: { decision: 'approve' }, artifact: { report: { score: 90 } }, input: { url: 'https://acme.com' } } }, 40000);
+  must(brief.json && brief.json.ok === false && !brief.json.brief, 'without a key, /api/agent/brief returns {ok:false} and no brief — the verified result stands alone');
+} else {
+  console.log('\nAgent endpoints (real LLM key — proposal is only a proposal, hard-gated):');
+  // The planner PROPOSED; the same pure hard gate must independently accept it, and
+  // nothing may be spent by planning. (ok:false here is also acceptable — the LLM is
+  // allowed to decline — but a returned proposal MUST survive re-validation.)
+  if (plan.json?.ok === true) {
+    const p = plan.json.proposal;
+    must(!!p && validateAgentPlan(p, YES).ok === true, 'a returned proposal independently re-passes the pure hard gate (validateAgentPlan)');
+    must(!('decision' in (p || {})) && !('score' in (p || {})) && !('price' in (p || {})), 'proposal carries no decision/score/price — the LLM only proposes');
+  } else {
+    must(plan.json?.ok === false && typeof plan.json?.reason === 'string', 'planner may decline, but only as {ok:false, reason} — never a fabricated proposal');
+    must(!plan.json?.proposal, 'a declined plan returns no proposal');
+  }
+  // The brief endpoint, given an already-verified result, returns a grounded string
+  // or an honest ok:false — it never manufactures a success shape with a new decision.
+  const brief = await post('/api/agent/brief', { workResult: { ok: true, policy: { decision: 'approve' }, artifact: { report: { score: 90 } }, input: { url: 'https://acme.com' } } }, 40000);
+  must(brief.json && (brief.json.ok === false || typeof brief.json.brief === 'string'), '/api/agent/brief returns a grounded brief string or an honest {ok:false}');
+}
 
 // ── 3) real console buyer path (Manual/console e2e; no LLM on the work path) ──
 if (REQUIRE_LEDGER) {
