@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { procureWork } from '@/app/lens/ledger/work';
 import { WORK_SCHEMA, type WorkError } from '@/app/lens/ledger/workTypes';
-import { getService, DEFAULT_SERVICE, POLICY_IDS, type PolicyId } from '@/shared/services';
+import { getService, DEFAULT_SERVICE, policiesForService, type PolicyId } from '@/shared/services';
 import { fetchRunners, quorumFor } from '@/app/lens/ledger/runnerHealth';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,9 @@ export async function POST(req: Request) {
   const rawBudget = body?.maxBudget;
   const buyerName = typeof body?.buyerName === 'string' ? body.buyerName.slice(0, 64) : undefined;
   const requestSource = ['mcp', 'console'].includes(body?.requestSource) ? body.requestSource : 'browser';
-  const policyId: PolicyId | undefined = POLICY_IDS.includes(body?.policyId) ? body.policyId : undefined;
+  // policyId is optional; if provided it must belong to the requested service.
+  const policyId: PolicyId | undefined = typeof body?.policyId === 'string' && policiesForService(serviceType).includes(body.policyId) ? (body.policyId as PolicyId) : undefined;
+  if (typeof body?.policyId === 'string' && !policyId) return fail(`policy "${body.policyId}" is not valid for ${serviceType}`, 400);
 
   if (!jobId) return fail('jobId required ([A-Za-z0-9._:-]{3,64})', 400);
 

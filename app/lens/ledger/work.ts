@@ -18,7 +18,7 @@ import {
 import {
   WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type ServiceReport, type BidView,
 } from './workTypes';
-import { getService, evaluatePolicy, POLICY_IDS, VENDOR_SERVICE, type PolicyId, type PolicyResult, type VendorSecurityAssessmentReport } from '@/shared/services';
+import { getService, evaluatePolicy, policiesForService, type PolicyId, type PolicyResult } from '@/shared/services';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
 const CORE_PKG_ID = PACKAGE_ID || 'fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff';
@@ -65,12 +65,8 @@ export interface WorkParams {
   policyId?: PolicyId;
 }
 
-/** Buyer's deep acceptance verification (order matters; ALL must pass to Accept). */
-function recomputeVendorScoreOk(r: VendorSecurityAssessmentReport): boolean {
-  const sum = Math.max(0, Math.min(100, Math.round((r.scoringBreakdown || []).reduce((s, c) => s + c.points, 0))));
-  const criticalTransport = (r.scoringBreakdown || []).some((c) => c.key === 'tls_broken' || c.key === 'cert_expired');
-  return r.score === (criticalTransport ? Math.min(sum, 39) : sum);
-}
+// The buyer's score recompute is now service-generic — each registered service
+// knows how to recompute its own score from its scoringBreakdown (svc.recomputeScoreOk).
 
 export async function procureWork(
   params: WorkParams,
@@ -237,7 +233,7 @@ export async function procureWork(
   // Buyer acceptance verification — in order: hash → length → strict parse → schema →
   // request/report binding → deterministic score recompute. ALL must pass before Accept.
   const bv = { hashOk: false, lengthOk: false, schemaOk: false, bindingOk: false, scoreOk: false, verified: false };
-  let verifiedReport: VendorSecurityAssessmentReport | null = null;
+  let verifiedReport: ServiceReport | null = null;
   if (delivery) {
     const hl = verifyDelivery(reportJson, reportSha, reportLen);
     bv.hashOk = hl.computedSha === reportSha;
@@ -246,12 +242,10 @@ export async function procureWork(
     const schemaVal = parsed != null ? svc.validateReport(parsed) : ({ ok: false, error: 'unparseable' } as const);
     bv.schemaOk = schemaVal.ok === true;
     bv.bindingOk = schemaVal.ok === true && svc.bindsToRequest(schemaVal.value, inputVal.value).ok === true;
-    if (params.serviceType === VENDOR_SERVICE) {
-      bv.scoreOk = schemaVal.ok === true && recomputeVendorScoreOk(schemaVal.value as VendorSecurityAssessmentReport);
-      if (schemaVal.ok === true) verifiedReport = schemaVal.value as VendorSecurityAssessmentReport;
-    } else {
-      bv.scoreOk = true; // legacy site_audit has no scoring breakdown to recompute
-    }
+    // Score recompute is service-generic: the descriptor recomputes from its own
+    // scoringBreakdown (legacy site_audit has none → recomputeScoreOk returns true).
+    bv.scoreOk = schemaVal.ok === true && svc.recomputeScoreOk(schemaVal.value);
+    if (schemaVal.ok === true) verifiedReport = schemaVal.value;
     bv.verified = bv.hashOk && bv.lengthOk && bv.schemaOk && bv.bindingOk && bv.scoreOk;
   }
 
@@ -272,9 +266,11 @@ export async function procureWork(
   const reportAvailable = !!delivery; // real bytes were loaded (and re-hashed) THIS request
   const report = reportAvailable ? (safeParse(reportJson) as ServiceReport | null) : null;
 
-  // Deterministic buyer policy decision — only from a VERIFIED vendor report.
-  const policyId: PolicyId = params.policyId && POLICY_IDS.includes(params.policyId) ? params.policyId : 'standard-saas-v1';
-  const policy: PolicyResult | null = verifiedReport ? evaluatePolicy(policyId, verifiedReport, new Date().toISOString()) : null;
+  // Deterministic buyer policy decision — only from a VERIFIED report, using a
+  // policy scoped to this service (default = the service's first policy).
+  const svcPolicies = policiesForService(params.serviceType);
+  const policyId: PolicyId | null = params.policyId && svcPolicies.includes(params.policyId) ? params.policyId : svcPolicies[0] || null;
+  const policy: PolicyResult | null = verifiedReport && policyId ? evaluatePolicy(policyId, verifiedReport, new Date().toISOString()) : null;
 
   // agentTrace — ONLY events that actually occurred (no fabricated reasoning).
   const agentTrace: { step: string; detail: string }[] = [
@@ -285,7 +281,7 @@ export async function procureWork(
     ...(reportAvailable
       ? [
           { step: 'delivery_received', detail: `${deliveryCid.slice(0, 12)}…` },
-          { step: 'delivery_verified', detail: `hash+length+schema+binding${params.serviceType === VENDOR_SERVICE ? '+score' : ''} verified` },
+          { step: 'delivery_verified', detail: `hash+length+schema+binding${svc.legacy ? '' : '+score'} verified` },
           { step: 'receipt_created', detail: `${receipt!.contractId.slice(0, 12)}…` },
         ]
       : [{ step: 'resumed', detail: 'existing receipt recovered (report body not reloaded)' }]),

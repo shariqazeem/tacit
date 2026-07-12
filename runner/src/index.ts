@@ -11,6 +11,8 @@ import { siteAudit } from './audit.js';
 import { canonicalBytes } from './canonical.js';
 import { assessVendor } from './services/vendorAssessment.js';
 import { realObservers } from './services/vendorObservers.js';
+import { probePerformance } from './services/performanceProbe.js';
+import { realPerfObservers } from './services/performanceObservers.js';
 import { getService } from './_shared.js';
 
 // Execute a registered service adapter → canonical report bytes + hash + length.
@@ -18,6 +20,10 @@ import { getService } from './_shared.js';
 async function executeService(serviceType: string, input: { url: string }) {
   if (serviceType === 'vendor_security_assessment') {
     const report = await assessVendor(input, realObservers);
+    return canonicalBytes(report);
+  }
+  if (serviceType === 'web_performance_probe') {
+    const report = await probePerformance(input, realPerfObservers);
     return canonicalBytes(report);
   }
   if (serviceType === 'site_audit') {

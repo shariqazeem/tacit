@@ -28,8 +28,9 @@ export function canonicalize(value: unknown): string {
 
 // ── service ids ─────────────────────────────────────────────────────────────
 export const VENDOR_SERVICE = 'vendor_security_assessment';
+export const PERF_SERVICE = 'web_performance_probe';
 export const LEGACY_SITE_AUDIT = 'site_audit';
-export const SERVICE_IDS = [VENDOR_SERVICE, LEGACY_SITE_AUDIT] as const;
+export const SERVICE_IDS = [VENDOR_SERVICE, PERF_SERVICE, LEGACY_SITE_AUDIT] as const;
 export type ServiceId = (typeof SERVICE_IDS)[number];
 
 export type Validation<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -147,7 +148,40 @@ export interface SiteAuditReport {
   auditedAtUtc: string;
 }
 
-export type ServiceReport = VendorSecurityAssessmentReport | SiteAuditReport;
+/** The web_performance_probe report. Timings vary run to run (honest); the SCORE is a
+ *  pure function of the report — every deduction is in scoringBreakdown. */
+export interface PerfSample {
+  connectMs: number;
+  tlsMs: number;
+  ttfbMs: number;
+  totalMs: number;
+  status: number;
+  bytesRead: number;
+}
+export interface PerfAgg {
+  minMs: number;
+  medianMs: number;
+  maxMs: number;
+}
+export interface WebPerformanceProbeReport {
+  service: typeof PERF_SERVICE;
+  version: 1;
+  methodologyVersion: string;
+  serviceVersion: number;
+  target: { inputUrl: string; finalUrl: string; host: string; ipPinned: true };
+  protocol: { httpVersion: string };
+  samples: PerfSample[]; // exactly 5
+  aggregates: { ttfb: PerfAgg; tls: PerfAgg; total: PerfAgg };
+  transfer: { contentType: string | null; contentEncoding: string | null; compressibleWithoutCompression: boolean; bytesSampled: number };
+  caching: { cacheControl: string | null; etag: string | null; lastModified: string | null; age: string | null };
+  redirects: { count: number; revalidatedChain: true };
+  findings: Finding[];
+  score: { value: number; band: 'fast' | 'moderate' | 'slow' | 'poor'; version: string; scoringBreakdown: ScoringContribution[] };
+  limitations: string[];
+  measuredAtUtc: string;
+}
+
+export type ServiceReport = VendorSecurityAssessmentReport | SiteAuditReport | WebPerformanceProbeReport;
 
 // ── result summary (safe for MCP/UI) ─────────────────────────────────────────
 export interface ResultSummary {
@@ -195,6 +229,11 @@ export interface ServiceDescriptor {
   validateReport(report: unknown): Validation<ServiceReport>;
   /** Bind a report to the request that produced it (target/service/version). */
   bindsToRequest(report: ServiceReport, input: UrlServiceInput): Validation<true>;
+  /** The buyer recomputes the score from the report's own scoringBreakdown and
+   *  checks it matches — a pure function of the report (no hidden inputs). */
+  recomputeScoreOk(report: ServiceReport): boolean;
+  /** Onboarding policies valid for THIS service (service-scoped). */
+  policies: PolicyId[];
   /** Safe summary for MCP/UI. */
   summarize(report: ServiceReport): ResultSummary;
   publicMeta(): PublicServiceMeta;
@@ -255,6 +294,13 @@ const vendorDescriptor: ServiceDescriptor = {
     }
     return { ok: true, value: true };
   },
+  recomputeScoreOk(report) {
+    const r = report as VendorSecurityAssessmentReport;
+    const sum = Math.max(0, Math.min(100, Math.round((r.scoringBreakdown || []).reduce((s, c) => s + c.points, 0))));
+    const criticalTransport = (r.scoringBreakdown || []).some((c) => c.key === 'tls_broken' || c.key === 'cert_expired');
+    return r.score === (criticalTransport ? Math.min(sum, 39) : sum);
+  },
+  policies: ['standard-saas-v1', 'strict-infrastructure-v1'],
   summarize(report) {
     const r = report as VendorSecurityAssessmentReport;
     const order: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
@@ -295,6 +341,8 @@ const siteAuditDescriptor: ServiceDescriptor = {
     const r = report as SiteAuditReport;
     return r.requestedUrl === input.url ? { ok: true, value: true } : { ok: false, error: 'requestedUrl mismatch' };
   },
+  recomputeScoreOk: () => true, // legacy: no scoring breakdown to recompute
+  policies: [],
   summarize(report) {
     const r = report as SiteAuditReport;
     return { service: LEGACY_SITE_AUDIT, title: r.pageTitle || r.finalUrl, score: r.score, riskBand: 'n/a', headline: `site_audit · score ${r.score}`, topFindings: (r.findings || []).slice(0, 3).map((f) => ({ severity: 'info' as Severity, title: f })) };
@@ -304,9 +352,80 @@ const siteAuditDescriptor: ServiceDescriptor = {
   },
 };
 
+// ── web_performance_probe descriptor ─────────────────────────────────────────
+const PERF_INPUT_FIELDS: InputField[] = [{ name: 'url', label: 'Public endpoint (https)', type: 'https-url', required: true }];
+
+const perfDescriptor: ServiceDescriptor = {
+  id: PERF_SERVICE,
+  name: 'Web performance probe',
+  description: 'Bounded performance pre-screen of a public HTTPS endpoint — TTFB / TLS / total latency across 5 fresh-connection samples, plus transfer + caching posture. Not a load test.',
+  version: 1,
+  methodologyVersion: 'wpp-1.0',
+  legacy: false,
+  inputFields: PERF_INPUT_FIELDS,
+  validateInput: validateHttpsUrl,
+  canonicalInput: (input) => canonicalize({ url: input.url }),
+  complexitySignals: () => ({ inputBytes: 1 }), // constant for this service — no policy leak
+  validateReport(report) {
+    const e = (m: string): Validation<ServiceReport> => ({ ok: false, error: `perf report: ${m}` });
+    if (typeof report !== 'object' || report === null) return e('not an object');
+    const r = report as any;
+    if (r.service !== PERF_SERVICE) return e('wrong service');
+    if (r.version !== 1) return e('unsupported version');
+    if (typeof r.methodologyVersion !== 'string' || typeof r.measuredAtUtc !== 'string') return e('missing meta');
+    if (!r.target || typeof r.target.inputUrl !== 'string' || typeof r.target.finalUrl !== 'string' || typeof r.target.host !== 'string' || r.target.ipPinned !== true) return e('bad target');
+    if (!r.protocol || typeof r.protocol.httpVersion !== 'string') return e('missing protocol');
+    if (!Array.isArray(r.samples) || r.samples.length !== 5) return e('samples must have exactly 5 entries');
+    for (const s of r.samples) if (!s || ['connectMs', 'tlsMs', 'ttfbMs', 'totalMs', 'status', 'bytesRead'].some((k) => typeof s[k] !== 'number')) return e('malformed sample');
+    if (!r.aggregates?.ttfb || !r.aggregates?.tls || !r.aggregates?.total) return e('missing aggregates');
+    if (!r.transfer || typeof r.transfer.compressibleWithoutCompression !== 'boolean') return e('missing transfer');
+    if (!r.caching || typeof r.caching !== 'object') return e('missing caching');
+    if (!r.redirects || typeof r.redirects.count !== 'number' || r.redirects.revalidatedChain !== true) return e('missing redirects');
+    if (!Array.isArray(r.findings)) return e('findings must be an array');
+    for (const f of r.findings) if (!f || typeof f.id !== 'string' || typeof f.title !== 'string' || !['critical', 'high', 'medium', 'low', 'info'].includes(f.severity)) return e('malformed finding');
+    if (r.findings.some((f: any) => f.severity === 'critical')) return e('performance findings cannot be critical'); // cap
+    if (!r.score || typeof r.score.value !== 'number' || r.score.value < 0 || r.score.value > 100) return e('score out of range');
+    if (!['fast', 'moderate', 'slow', 'poor'].includes(r.score.band)) return e('invalid band');
+    if (!Array.isArray(r.score.scoringBreakdown) || r.score.scoringBreakdown.length === 0) return e('missing scoringBreakdown');
+    if (!Array.isArray(r.limitations)) return e('missing limitations');
+    return { ok: true, value: r as WebPerformanceProbeReport };
+  },
+  bindsToRequest(report, input) {
+    const r = report as WebPerformanceProbeReport;
+    if (r.service !== PERF_SERVICE) return { ok: false, error: 'service mismatch' };
+    if (r.target.inputUrl !== input.url) return { ok: false, error: 'target.inputUrl does not match the work request' };
+    const inHost = normHost(input.url);
+    if (inHost && r.target.host && r.target.host.toLowerCase() !== inHost) return { ok: false, error: 'report host does not match the requested host' };
+    return { ok: true, value: true };
+  },
+  recomputeScoreOk(report) {
+    const r = report as WebPerformanceProbeReport;
+    const sum = Math.max(0, Math.min(100, Math.round((r.score.scoringBreakdown || []).reduce((s, c) => s + c.points, 0))));
+    return r.score.value === sum;
+  },
+  policies: ['latency-slo-standard-v1', 'latency-slo-strict-v1'],
+  summarize(report) {
+    const r = report as WebPerformanceProbeReport;
+    const order: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+    const top = [...r.findings].sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity)).slice(0, 3);
+    return {
+      service: PERF_SERVICE,
+      title: r.target.host,
+      score: r.score.value,
+      riskBand: r.score.band,
+      headline: `${r.score.band} · median TTFB ${r.aggregates.ttfb.medianMs}ms · ${r.protocol.httpVersion} · ${r.findings.length} finding(s)`,
+      topFindings: top.map((f) => ({ severity: f.severity, title: f.title })),
+    };
+  },
+  publicMeta() {
+    return { id: this.id, name: this.name, description: this.description, version: this.version, methodologyVersion: this.methodologyVersion, inputFields: this.inputFields, legacy: false };
+  },
+};
+
 // ── registry ──────────────────────────────────────────────────────────────────
 export const SERVICE_REGISTRY: Record<ServiceId, ServiceDescriptor> = {
   [VENDOR_SERVICE]: vendorDescriptor,
+  [PERF_SERVICE]: perfDescriptor,
   [LEGACY_SITE_AUDIT]: siteAuditDescriptor,
 };
 
@@ -325,12 +444,22 @@ export function listPublicServices(): PublicServiceMeta[] {
 }
 
 // ── deterministic buyer policy engine (no LLM; fully inspectable) ─────────────
-export type PolicyId = 'standard-saas-v1' | 'strict-infrastructure-v1';
-export const POLICY_IDS: PolicyId[] = ['standard-saas-v1', 'strict-infrastructure-v1'];
+export type PolicyId = 'standard-saas-v1' | 'strict-infrastructure-v1' | 'latency-slo-standard-v1' | 'latency-slo-strict-v1';
+export const POLICY_IDS: PolicyId[] = ['standard-saas-v1', 'strict-infrastructure-v1', 'latency-slo-standard-v1', 'latency-slo-strict-v1'];
+/** Policies are SERVICE-SCOPED: each service accepts only its own onboarding policies. */
+export const SERVICE_POLICIES: Record<ServiceId, PolicyId[]> = {
+  [VENDOR_SERVICE]: ['standard-saas-v1', 'strict-infrastructure-v1'],
+  [PERF_SERVICE]: ['latency-slo-standard-v1', 'latency-slo-strict-v1'],
+  [LEGACY_SITE_AUDIT]: [],
+};
+export function policiesForService(serviceId: string): PolicyId[] {
+  return SERVICE_POLICIES[serviceId as ServiceId] || [];
+}
 export type PolicyDecision = 'approve' | 'approve_with_conditions' | 'human_review' | 'reject';
 
 export interface PolicyResult {
   policyId: PolicyId;
+  serviceType: ServiceId;
   policyVersion: string;
   decision: PolicyDecision;
   reasonCodes: string[]; // tied to real findings/score
@@ -342,11 +471,9 @@ export interface PolicyResult {
 }
 
 const POLICY_VERSION = '1.0';
-const STATEMENT = 'This is an automated technical pre-screen of public web-security posture — not a security certification, penetration test, or guarantee.';
+const VSA_STATEMENT = 'This is an automated technical pre-screen of public web-security posture — not a security certification, penetration test, or guarantee.';
 
-/** Deterministic onboarding decision from a VERIFIED vendor report. Never invents
- *  facts; every reason code references an observed finding or the computed score. */
-export function evaluatePolicy(policyId: PolicyId, report: VendorSecurityAssessmentReport, decidedAtUtc: string): PolicyResult {
+function evaluateVendorPolicy(policyId: PolicyId, report: VendorSecurityAssessmentReport, decidedAtUtc: string): PolicyResult {
   const findings = report.findings || [];
   const has = (sev: Severity) => findings.some((f) => f.severity === sev);
   const criticals = findings.filter((f) => f.severity === 'critical');
@@ -355,13 +482,11 @@ export function evaluatePolicy(policyId: PolicyId, report: VendorSecurityAssessm
   const reasonCodes: string[] = [];
   const requiredActions = conditionable.map((f) => ({ findingId: f.id, action: f.remediation }));
   const score = report.score;
-
   const strict = policyId === 'strict-infrastructure-v1';
   let decision: PolicyDecision;
 
   if (criticals.length || report.riskBand === 'critical') {
-    // A critical transport/identity failure can NEVER approve.
-    decision = strict ? 'reject' : 'human_review';
+    decision = strict ? 'reject' : 'human_review'; // critical transport/identity failure can NEVER approve
     reasonCodes.push(...criticals.map((f) => `critical:${f.id}`));
     if (!criticals.length) reasonCodes.push('critical:risk_band');
   } else if (strict) {
@@ -377,12 +502,52 @@ export function evaluatePolicy(policyId: PolicyId, report: VendorSecurityAssessm
     else if (score >= 40) { decision = 'human_review'; reasonCodes.push(`score:${score}`); }
     else { decision = 'reject'; reasonCodes.push(`score:${score}`); }
   }
+  return { policyId, serviceType: VENDOR_SERVICE, policyVersion: POLICY_VERSION, decision, reasonCodes, requiredActions, decidedAtUtc, statement: VSA_STATEMENT, scoreConsidered: score, riskBandConsidered: report.riskBand };
+}
 
-  return {
-    policyId, policyVersion: POLICY_VERSION, decision,
-    reasonCodes, requiredActions, decidedAtUtc, statement: STATEMENT,
-    scoreConsidered: score, riskBandConsidered: report.riskBand,
-  };
+function evaluatePerformancePolicy(policyId: PolicyId, report: WebPerformanceProbeReport, decidedAtUtc: string): PolicyResult {
+  const band = report.score.band;
+  const medianTtfb = report.aggregates.ttfb.medianMs;
+  const findings = report.findings || [];
+  const highs = findings.filter((f) => f.severity === 'high');
+  const conditionable = findings.filter((f) => f.severity === 'high' || f.severity === 'medium');
+  const requiredActions = conditionable.map((f) => ({ findingId: f.id, action: f.remediation }));
+  const reasonCodes: string[] = [`band:${band}`, `ttfb_median_ms:${medianTtfb}`];
+  const strict = policyId === 'latency-slo-strict-v1';
+  const allErrored = report.samples.every((s) => s.status === 0 || s.status >= 500);
+  let decision: PolicyDecision;
+
+  if (allErrored || band === 'poor') {
+    decision = 'reject'; // a total-failure report can never approve
+    reasonCodes.push(allErrored ? 'endpoint_unavailable' : 'band_poor');
+  } else if (strict) {
+    if (highs.length) { decision = 'reject'; reasonCodes.push(...highs.map((f) => `high:${f.id}`)); }
+    else if (band === 'fast' && medianTtfb <= 400) { decision = 'approve'; }
+    else if (band === 'fast') { decision = 'approve_with_conditions'; reasonCodes.push('ttfb_above_strict_slo', ...conditionable.map((f) => `condition:${f.id}`)); }
+    else if (band === 'moderate') { decision = 'human_review'; reasonCodes.push(...conditionable.map((f) => `condition:${f.id}`)); }
+    else { decision = 'reject'; } // slow
+  } else {
+    if (band === 'fast') { decision = 'approve'; }
+    else if (band === 'moderate') { decision = highs.length ? 'human_review' : 'approve_with_conditions'; reasonCodes.push(...conditionable.map((f) => `condition:${f.id}`)); }
+    else if (band === 'slow') { decision = 'human_review'; reasonCodes.push(...conditionable.map((f) => `condition:${f.id}`)); }
+    else { decision = 'reject'; }
+  }
+  const statement = strict
+    ? 'Automated performance pre-screen against a STRICT latency SLO for a public endpoint — a bounded pre-screen, not a load test or an availability guarantee.'
+    : 'Automated performance pre-screen against the standard latency SLO for a public endpoint — a bounded pre-screen, not a load test or an availability guarantee.';
+  return { policyId, serviceType: PERF_SERVICE, policyVersion: POLICY_VERSION, decision, reasonCodes, requiredActions, decidedAtUtc, statement, scoreConsidered: report.score.value, riskBandConsidered: band };
+}
+
+/** Deterministic onboarding decision from a VERIFIED report. Dispatches by service;
+ *  a policy that does not belong to the report's service is a precise error. Never
+ *  invents facts; every reason code references an observed finding or the score. */
+export function evaluatePolicy(policyId: PolicyId, report: ServiceReport, decidedAtUtc: string): PolicyResult {
+  if (!policiesForService(report.service).includes(policyId)) {
+    throw new Error(`policy "${policyId}" is not valid for service "${report.service}"`);
+  }
+  if (report.service === VENDOR_SERVICE) return evaluateVendorPolicy(policyId, report, decidedAtUtc);
+  if (report.service === PERF_SERVICE) return evaluatePerformancePolicy(policyId, report, decidedAtUtc);
+  throw new Error(`no policy engine for service "${report.service}"`);
 }
 
 // ── Buyer Agent Console: plan validation (pure; the HARD gate) ───────────────
@@ -422,6 +587,10 @@ export function validateAgentPlan(raw: unknown, isAvailable: (serviceId: string)
 
   const policyId = typeof r.policyId === 'string' ? r.policyId.trim() : '';
   if (!(POLICY_IDS as string[]).includes(policyId)) return { ok: false, reason: `unknown policy "${policyId || '?'}"` };
+  // Policy must belong to the chosen service (service-scoped).
+  if (!(policiesForService(serviceType) as string[]).includes(policyId)) {
+    return { ok: false, reason: `policy "${policyId}" is not valid for ${serviceType}` };
+  }
 
   const budget = Number(r.maxBudget);
   if (!Number.isFinite(budget) || budget < PLAN_BUDGET_MIN || budget > PLAN_BUDGET_MAX) {

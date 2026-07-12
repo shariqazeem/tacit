@@ -52,7 +52,7 @@ export function loadConfig(): RunnerConfig {
     stateFile: process.env.RUNNER_STATE_FILE || `/tmp/tacit-runner-${req('RUNNER_PROVIDER_ID')}.json`,
     // Advertise ONLY services this runner can actually execute. Ships both the
     // vendor_security_assessment adapter (launch service) and the legacy site_audit.
-    services: (process.env.RUNNER_SERVICES || 'vendor_security_assessment,site_audit')
+    services: (process.env.RUNNER_SERVICES || 'vendor_security_assessment,web_performance_probe,site_audit')
       .split(',').map((s) => s.trim()).filter(Boolean),
     apiUrl: req('TACIT_V2_API_URL'),
     tokenUrl: req('TACIT_DEVNET_TOKEN_URL'),
