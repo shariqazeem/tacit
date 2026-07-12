@@ -1,5 +1,44 @@
 # Tacit — submission release candidate
 
+## Buyer Agent Console — a real LLM procurement agent (2026-07-12)
+
+`/work` is now **console-first**: an **Agent** tab (default) where you describe an
+onboarding in plain English, plus the full **Manual** form (preserved). The LLM has
+**exactly two touchpoints, both OFF the work path**:
+
+1. **Plan** — `POST /api/agent/plan {goalText}` asks a server-side, env-configured
+   OpenAI-compatible model to return strict JSON `{serviceType, input:{url}, policyId,
+   maxBudget, confidence, assumptions[]}`. This is a **proposal only** — nothing is
+   spent. `validateAgentPlan` (pure, in `shared/services.ts`) is the **hard gate**: it
+   re-checks service registration + availability quorum, the https/SSRF input validator,
+   the policy id, and budget bounds, and **fails closed** on anything else. The human
+   approves the resulting **mandate card**, which then calls the real, no-fallback
+   `/api/work/procure` (`requestSource:"console"`).
+2. **Brief** — `POST /api/agent/brief {workResult}` asks the model, grounded on ONLY a
+   projection of the **already-verified** WorkResult, for a ≤120-word plain-English
+   explanation. It cites nothing not in the JSON and **decides nothing** — `evaluatePolicy`
+   remains the only decision-maker. Rendered above the verified sections, labeled
+   "Agent brief — generated; verified data below."
+
+**Honest failure:** if the LLM is unconfigured, times out, or returns garbage, `/plan`
+returns `{ok:false, reason}` (never a fabricated proposal) and the user sees the Manual
+form; `/brief` returns `{ok:false}` and the verified result stands alone. The LLM never
+invents findings, scores, prices, or decisions. During procurement, agent-voiced
+narration is keyed **deterministically** to real ledger stage transitions (no LLM, no
+timers). The console and MCP `tacit_assess_vendor` are the same buyer path, two clients.
+
+- **New env (add to `~/tacit-devnet.env`; server-side only, never in the client bundle):**
+  `TACIT_LLM_PROVIDER`, `TACIT_LLM_MODEL`, `TACIT_LLM_API_KEY`, `TACIT_LLM_BASE_URL`.
+  Falls back to the existing `GRADIENT_*` config, so it deploys without re-provisioning.
+- **Verified:** `npm run preflight:console` (plan fails closed on hostile inputs incl.
+  prompt-injection + SSRF; agents fail honestly without a key; a real `requestSource=console`
+  procurement completes with the deterministic policy + buyer verification). Plan-validator
+  unit tests in `npm run test:services`. Frozen Daml unchanged.
+
+---
+
+
+
 ## submission-rc2 — agentic vendor-security product (2026-07-12)
 
 Tacit is now **a private work exchange for software agents, launching with vendor
