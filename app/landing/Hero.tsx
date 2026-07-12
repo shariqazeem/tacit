@@ -70,16 +70,20 @@ export function Hero() {
               style={{ willChange: 'transform' }}
             >
               <Link
-                href="/lens"
+                href="/work"
                 className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline"
                 style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}
               >
-                See it live
+                Run real work
                 <span aria-hidden style={{ fontSize: 12 }}>→</span>
               </Link>
             </motion.span>
 
-            <button type="button" onClick={toMechanic} className="text-[15px] font-medium" style={{ color: C.ink2, fontFamily: FONT.sans }}>
+            <Link href="/lens" className="text-[15px] font-medium no-underline" style={{ color: C.ink2, fontFamily: FONT.sans }}>
+              Inspect ledger privacy →
+            </Link>
+
+            <button type="button" onClick={toMechanic} className="text-[15px] font-medium" style={{ color: C.ink3, fontFamily: FONT.sans }}>
               Read the model ↓
             </button>
           </div>
@@ -89,7 +93,7 @@ export function Hero() {
             className="tacit-rise mt-14 text-[12px]"
             style={{ color: C.ink3, fontFamily: FONT.mono, letterSpacing: '0.02em', animationDelay: '0.28s' }}
           >
-            Sealed bids · Atomic award · Real contract ids
+            3 live providers · Real fulfillment · Private delivery
           </div>
         </div>
       </div>

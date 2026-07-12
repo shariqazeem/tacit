@@ -62,7 +62,10 @@ function appDownResult(e: unknown) {
 }
 
 // ── Server ────────────────────────────────────────────────────
-const server = new McpServer({ name: 'tacit', version: '0.2.0' });
+const server = new McpServer({ name: 'tacit', version: '0.3.0' });
+
+const HTTPS_RE = /^https:\/\/[^\s]{1,2048}$/i;
+const workJobId = () => `wjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 // tacit_health
 server.tool(
@@ -255,6 +258,137 @@ server.tool(
         'Note: today the transferred value is a demo voucher (USD.demo), deliberately not a stablecoin — real stablecoin settlement is the next roadmap step.',
       ].join('\n'),
     );
+  },
+);
+
+// ── Tacit Work (the REAL provider spine) ──────────────────────
+// tacit_work_health
+server.tool(
+  'tacit_work_health',
+  'Check whether Tacit Work is ready: Canton devnet + all three separate provider runner processes. Call before tacit_procure_work. There is NO simulation for work — if this is not ok, procurement cannot run.',
+  async () => {
+    try {
+      const { json: h } = await fetchJson(`${APP_URL}/api/work/health`, {}, 8000);
+      const runners = Array.isArray(h?.runners) ? h.runners : [];
+      return text(
+        [
+          `Tacit Work: ${h?.ok ? 'READY' : 'NOT ready'}${h?.reason ? ` — ${h.reason}` : ''}`,
+          `Ledger mode: ${h?.mode} · reachable: ${h?.ledgerReachable ? 'yes' : 'no'}`,
+          `Packages: core ${h?.corePackage?.shortId}… · work ${h?.workPackage?.shortId}…`,
+          `Provider runners ready: ${runners.length}/3${runners.length ? ` (${runners.map((r: any) => r.label).join(', ')})` : ''}`,
+          `Distinct instances: ${h?.distinctInstances ? 'yes' : 'no'} · distinct processes: ${h?.distinctProcesses ? 'yes' : 'no'}`,
+          h?.ok
+            ? 'Ready: tacit_procure_work will run a real private procurement on Canton (no fallback).'
+            : 'Not ready: tacit_procure_work will error until three distinct provider runners are up on devnet.',
+        ].join('\n'),
+      );
+    } catch (e) {
+      return appDownResult(e);
+    }
+  },
+);
+
+// tacit_procure_work
+const workOut = {
+  ok: z.boolean(),
+  mode: z.string(),
+  jobId: z.string(),
+  resumed: z.boolean(),
+  requestedUrl: z.string(),
+  finalUrl: z.string().optional(),
+  httpStatus: z.number().optional(),
+  responseLatencyMs: z.number().optional(),
+  winner: z.string(),
+  amount: z.number(),
+  currency: z.string(),
+  settlementContractId: z.string(),
+  deliveryContractId: z.string().optional(),
+  receiptContractId: z.string(),
+  sha256: z.string().optional(),
+  byteLength: z.number().optional(),
+  verifiedThisRequest: z.boolean(),
+  visibility: z.string(),
+};
+
+server.registerTool(
+  'tacit_procure_work',
+  {
+    description:
+      'Procure REAL work on Canton: three separate provider processes submit sealed bids as distinct Canton parties, the buyer awards + prepays the lowest, the winner performs a real website audit (site_audit) and delivers it privately, and the buyer verifies the delivered bytes off-ledger before accepting — leaving an auditor-visible receipt. No simulation, no fallback: if the network is not ready this errors. Can take ~15–40s.',
+    inputSchema: {
+      url: z.string().regex(HTTPS_RE).describe('The https:// website to audit (e.g. https://example.com).'),
+      maxBudget: z.number().positive().max(10000).describe('Maximum budget in USD.demo (a demo voucher). The lowest sealed bid at or below this wins.'),
+      jobId: z.string().regex(/^[A-Za-z0-9._:-]{3,64}$/).optional().describe('Optional idempotency key. Reuse the SAME jobId to safely resume a job after a timeout — the ledger will not pay twice. Omit to start a fresh job.'),
+      buyerLabel: z.string().max(64).optional().describe('Optional display label for the buyer. The workflow acts through the pinned buyer party — this does NOT allocate a distinct Canton party.'),
+    },
+    outputSchema: workOut,
+  },
+  async ({ url, maxBudget, jobId, buyerLabel }) => {
+    const id = jobId || workJobId();
+    let data: any;
+    try {
+      const res = await fetchJson(
+        `${APP_URL}/api/work/procure`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType: 'site_audit', input: { url }, maxBudget, buyerName: buyerLabel }) },
+        150000,
+      );
+      if (!res.ok || !res.json?.ok) {
+        const err = res.json?.error || `HTTP ${res.status}`;
+        return { isError: true, content: [{ type: 'text' as const, text: `Tacit Work procurement failed (no fallback): ${err}\nJob id ${id} — reuse it with tacit_procure_work to safely resume (idempotent, no double payment).` }] };
+      }
+      data = res.json;
+    } catch (e) {
+      return appDownResult(e);
+    }
+
+    const rep = data.artifact?.report;
+    const ev = data.evidence || {};
+    const winnerLabel = data.winner?.providerLabel ?? 'the winner';
+    const lines: string[] = [
+      `TACIT WORK — site_audit of ${url}`,
+      `Mode: ${data.mode}${data.resumption?.resumed ? ' · resumed existing job' : ''}`,
+      '',
+      'Three separate provider processes bid as distinct Canton parties (one shared hosted-validator credential — not separate validators or organizations).',
+      `Winner: ${winnerLabel} · awarded and prepaid ${data.amount} ${data.currency} (a demo voucher, not real money).`,
+      '',
+    ];
+    if (data.artifact?.available && rep) {
+      lines.push(`Audit: HTTP ${rep.httpStatus} in ${rep.responseLatencyMs}ms · score ${rep.score} · ${data.artifact.byteLength} bytes.`);
+      lines.push(`The buyer verified the exact delivered bytes off-ledger: SHA-256 ${data.artifact.sha256?.slice(0, 16)}… matches the on-ledger commitment.`);
+    } else {
+      lines.push('This job was already accepted earlier; the report body is not reconstructed by the active-contract reader. The settlement and receipt below are real.');
+    }
+    lines.push(`Private delivery: visible to buyer + winner only. Delivery receipt: buyer + winner + auditor — the auditor sees the receipt commitment, not the report.`);
+    lines.push(`Settlement ${ev.settlementContractId} · Receipt ${ev.receiptContractId}`);
+    lines.push(`View it in the browser: ${APP_URL}/work`);
+
+    const visSummary = data.visibility?.available
+      ? 'buyer sees all bids + report; each provider sees only its own bid; auditor sees the receipt, not the report'
+      : 'per-party snapshot not reproduced for this resumed job';
+
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      structuredContent: {
+        ok: true,
+        mode: String(data.mode),
+        jobId: String(data.jobId ?? id),
+        resumed: !!data.resumption?.resumed,
+        requestedUrl: url,
+        finalUrl: rep?.finalUrl,
+        httpStatus: rep?.httpStatus,
+        responseLatencyMs: rep?.responseLatencyMs,
+        winner: String(winnerLabel),
+        amount: Number(data.amount ?? 0),
+        currency: String(data.currency ?? 'USD.demo'),
+        settlementContractId: String(ev.settlementContractId ?? ''),
+        deliveryContractId: ev.deliveryContractId,
+        receiptContractId: String(ev.receiptContractId ?? ''),
+        sha256: data.artifact?.sha256,
+        byteLength: data.artifact?.byteLength,
+        verifiedThisRequest: !!data.artifact?.verifiedThisRequest,
+        visibility: visSummary,
+      },
+    };
   },
 );
 

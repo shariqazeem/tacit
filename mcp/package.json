@@ -1,6 +1,6 @@
 {
   "name": "tacit-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "MCP server exposing Tacit — private sealed-bid agent commerce on Canton — as tools any AI agent can call.",
