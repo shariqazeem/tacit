@@ -49,6 +49,25 @@ intent), and MCP `tacit_probe_performance` (v0.5.0). **No LLM anywhere** in meas
 policy. Proven live on devnet against `example.com`: HTTP/2, median TTFB ~452 ms, band `fast`, score
 100, policy → `approve`, buyer re-hash == provider commitment.
 
+### 0c. Live market — the auditor's lawful view (`/market`, ledger-derived)
+
+`/market` ("The market, from the auditor's chair") is a live agent-economy dashboard computed
+**entirely from on-ledger contracts the pinned Auditor party can lawfully see** — `Settlement` +
+`DeliveryReceipt`. It is a proof of the privacy model: it shows winners/amounts/times/byteLen/SHA-256
+commitments because the auditor is a stakeholder of those, and it **cannot** show sealed bids or report
+bodies because the auditor is not a stakeholder of a `SealedBid`/`PrivateDelivery` and Canton won't
+return them (each receipt row wears a "report body: sealed 🔒" lock). `GET /api/market/overview`
+queries live as the auditor (15s read cache, `asOfUtc`); **no app-side history store, no seeded data.**
+The response carries commitments/amounts/winners/times/serviceType only — never bids, prices, report
+bodies, or any `http(s)://` target (we drop the on-ledger `title`, which can embed a host). It is
+**work-path scoped** (receipts joined to settlements) so `totalVolume == Σ perService.volume ==
+Σ provider.earned`. Treasury integrity is proven by `preflight:market` (19 assertions): an independent
+raw-Canton auditor recompute matches the displayed treasury exactly, and each provider's `Iou` balance
+reconciles when scoped to work-path (the excess is pre-existing negotiate-demo Ious, reported). MCP
+`tacit_market_overview` exposes the same auditor view so an agent can check a provider's track record
+before hiring. Runner pricing was tightened to a competitive band (same base, margins 0.25/0.26/0.27)
+so real-time load decides the winner going forward — history untouched.
+
 ---
 
 ## 1. The four agents

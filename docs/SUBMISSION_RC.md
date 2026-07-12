@@ -1,5 +1,52 @@
 # Tacit — submission release candidate
 
+## Live market — the auditor's lawful view, a proof of the privacy model (2026-07-12)
+
+`/market` ("The market, from the auditor's chair") is a live agent-economy dashboard
+computed **entirely from on-ledger contracts the pinned Auditor party can lawfully
+see** — Settlements and DeliveryReceipts. It is itself a **proof of the privacy model**:
+it *can* show settlements, winners, amounts, times, byte lengths, and SHA-256
+commitments because the auditor is a stakeholder of those; it *cannot* show sealed
+bids or report bodies, because the auditor is not a stakeholder of a `SealedBid` or a
+`PrivateDelivery` and **Canton simply does not return them**. Every receipt row wears a
+"report body: sealed 🔒" lock — the row *is* the story: work happened, evidence was
+committed, content stayed private.
+
+- **Ledger-derived, no store:** `GET /api/market/overview` queries live as the auditor
+  at request time (15s read cache, `asOfUtc` on every response). No app-side job
+  history, no seeded or timer-driven activity. It launches with genuine history —
+  days of preflights left real settlements/receipts on devnet.
+- **Auditor-view discipline:** the response carries commitments/amounts/winners/times/
+  byteLen/serviceType only. It **never** contains sealed bids, bid prices, report
+  bodies, or any `http(s)://` target — we deliberately drop the on-ledger `title`
+  (which can embed a target host). A preflight scans the raw body to enforce this.
+- **Work-path scoped + internally consistent:** treasury/volume/wins derive from
+  **delivery receipts joined to their settlement**, so `totalVolume == Σ perService.volume
+  == Σ provider.earned`. Settlements without a receipt (older negotiate-demo deals the
+  auditor can also see, or awarded-but-undelivered work) are excluded.
+- **Treasury integrity (proven live):** `npm run preflight:market` (**19 assertions**)
+  recomputes each provider's treasury from an **independent raw-Canton auditor query**
+  (zero shared code) and it matches exactly; it then reconciles against each provider's
+  active `Iou` balance, **scoped to work-path**. Example: Provider C's raw Iou balance
+  `915.89` = work treasury `533.12` + **`382.77` excess = pre-existing negotiate-demo
+  Ious** (reported, not asserted away — the auditor cannot see Ious, so this read is
+  done as each provider).
+- **Runner pricing (forward-only):** the three runners already bid as distinct parties
+  with private cost structures. Their `run-runner.sh` spread was wide (C always
+  cheapest → C won all 26 historical jobs). We **tightened it to a competitive band**
+  (same base cost `20`; margins `0.25 / 0.26 / 0.27`) so the real-time **load** factor
+  (a busy agent bids higher) decides the winner and winners rotate under concurrent
+  demand. This changes **future real bids only** — recorded history is untouched, no
+  randomness, no scripted outcomes. Under strictly sequential demand the lowest-idle-cost
+  agent still wins (an honest market outcome).
+- **MCP 0.6.0:** `tacit_market_overview {}` gives an agent the same auditor view — check
+  a provider's track record before hiring, without seeing anything private.
+- **Live:** https://tacit.80-225-209-190.sslip.io/market. `demo:check` asserts it healthy.
+
+---
+
+
+
 ## Second real service: `web_performance_probe` — a new vertical, zero Daml changes (2026-07-12)
 
 Tacit is now a **two-market** exchange. Alongside vendor security, buyers can hire the
@@ -89,7 +136,7 @@ auditor gets the receipt, not the report. Frozen Daml packages unchanged.
 
 - **Live:** https://tacit.80-225-209-190.sslip.io/work · MCP `tacit_assess_vendor`.
 - **Proven live on devnet (through HTTPS):** agentic vendor e2e **35/35** + original
-  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (165 assertions across 9 suites — two live services).
+  privacy **11/11**, no fallback. Manifest: [verification-manifest.json](verification-manifest.json) (195 assertions across 11 suites — two live services + the auditor-view market).
 - **Fresh live evidence (example.com):** real TLSv1.3 / Cloudflare cert / 48d · score
   59 "weak" · 8 findings · policy `standard-saas-v1` → **human_review** (score:59) ·
   winner providerC @ 20.77 USD.demo · `providerCommittedSha256 == buyerComputedSha256`
@@ -116,6 +163,7 @@ source of truth for the submission.
 |---|---|
 | Product story (landing) | https://tacit.80-225-209-190.sslip.io |
 | **Tacit Work** (run a real private procurement) | https://tacit.80-225-209-190.sslip.io/work |
+| **Live market** (the auditor's lawful view) | https://tacit.80-225-209-190.sslip.io/market |
 | Ledger Lens (per-party privacy) | https://tacit.80-225-209-190.sslip.io/lens |
 | Work readiness | https://tacit.80-225-209-190.sslip.io/api/work/health |
 | Health | https://tacit.80-225-209-190.sslip.io/api/health |
