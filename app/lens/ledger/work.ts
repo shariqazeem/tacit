@@ -352,6 +352,58 @@ export async function procureWork(
   };
 }
 
+/**
+ * Read-only, LEDGER-DERIVED progress for a jobId. A stage is `true` only when its
+ * real contract exists on-ledger (a later stage implies all earlier ones). No
+ * timers, no fabrication. Used by /api/work/status for honest browser telemetry.
+ */
+export interface WorkStatus {
+  jobId: string;
+  bidsSeen: number;
+  stages: {
+    request_opened: boolean;
+    bids_received: boolean;
+    award_settled: boolean;
+    assignment_created: boolean;
+    delivery_received: boolean;
+    receipt_created: boolean;
+  };
+  completed: boolean;
+}
+
+export async function workStatus(jobId: string): Promise<WorkStatus> {
+  const buyer = pinnedParty('Buyer');
+  if (!buyer) throw new Error('buyer party not configured');
+  const rfsId = `WRK-${jobId}`;
+  const [bids, settlement, assignment, delivery, receipt, awr] = await Promise.all([
+    queryAs(buyer, [T.SealedBid], { rfsId }),
+    queryAs(buyer, [T.Settlement], { rfsId }),
+    queryAs(buyer, [TW.Assignment], { jobId }),
+    queryAs(buyer, [TW.PrivateDelivery], { jobId }),
+    queryAs(buyer, [TW.DeliveryReceipt], { jobId }),
+    queryAs(buyer, [TW.ActiveWorkRequest], { jobId }),
+  ]);
+  const hasReceipt = receipt.length > 0;
+  const hasDelivery = delivery.length > 0 || hasReceipt; // delivery is consumed by Accept
+  const hasAssign = assignment.length > 0 || hasReceipt; // assignment persists after delivery
+  const hasSettle = settlement.length > 0 || hasAssign;
+  const hasBids = bids.length >= 3 || hasSettle;
+  const hasRequest = awr.length > 0 || hasSettle || hasAssign;
+  return {
+    jobId,
+    bidsSeen: bids.length,
+    stages: {
+      request_opened: hasRequest,
+      bids_received: hasBids,
+      award_settled: hasSettle,
+      assignment_created: hasAssign,
+      delivery_received: hasDelivery,
+      receipt_created: hasReceipt,
+    },
+    completed: hasReceipt,
+  };
+}
+
 function safeParse(s: string): unknown {
   try {
     return s ? JSON.parse(s) : null;

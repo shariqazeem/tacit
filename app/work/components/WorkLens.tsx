@@ -31,7 +31,7 @@ export function WorkLens({ result }: { result: WorkResult }) {
     { key: 'req', label: 'Work request (URL, budget)', value: result.input.url, visibleTo: (p: Persona) => !!vis.activeWorkRequest[p] },
     ...bidRows,
     { key: 'settle', label: 'Winner & amount', value: `${PERSONA_META[result.winner.providerLabel]?.label ?? result.winner.providerLabel} · ${result.amount.toFixed(2)} USD.demo`, visibleTo: (p: Persona) => !!vis.settlement[p] },
-    { key: 'report', label: 'Private report body', value: result.artifact.report ? `site_audit · score ${result.artifact.report.score}` : 'delivered report', visibleTo: (p: Persona) => !!vis.privateDelivery[p] },
+    { key: 'report', label: 'Private assessment report', value: result.artifact.report ? `assessment · score ${result.artifact.report.score}/100` : 'delivered report', visibleTo: (p: Persona) => !!vis.privateDelivery[p] },
     { key: 'receipt', label: 'Delivery receipt (SHA-256)', value: `${result.artifact.sha256.slice(0, 12)}…`, visibleTo: (p: Persona) => !!vis.receipt[p] },
   ];
 

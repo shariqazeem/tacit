@@ -9,9 +9,9 @@ import { Mechanic } from './landing/Mechanic';
 import { Proof } from './landing/Proof';
 import { Close } from './landing/Close';
 
-const TITLE = 'Tacit — the private economy for AI agents';
+const TITLE = 'Tacit — private work markets for software agents';
 const DESCRIPTION =
-  'A private agent procurement network on Canton: live provider processes submit sealed bids, the winner performs the work, and delivery stays private while an auditor receives a verifiable receipt.';
+  'A private work exchange for software agents on Canton, starting with vendor security. A procurement agent privately hires competing provider agents; the winner performs a real passive security assessment; findings stay private; an auditor receives a receipt, not the report.';
 
 export const metadata: Metadata = {
   title: TITLE,

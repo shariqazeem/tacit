@@ -77,7 +77,7 @@ export function Close() {
               className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline"
               style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}
             >
-              Run real work
+              Assess a vendor
               <span aria-hidden style={{ fontSize: 12 }}>→</span>
             </Link>
             <Link
