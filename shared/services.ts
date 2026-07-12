@@ -318,3 +318,64 @@ export function isRegisteredService(id: string): id is ServiceId {
 export function listPublicServices(): PublicServiceMeta[] {
   return SERVICE_IDS.map((id) => SERVICE_REGISTRY[id].publicMeta());
 }
+
+// ── deterministic buyer policy engine (no LLM; fully inspectable) ─────────────
+export type PolicyId = 'standard-saas-v1' | 'strict-infrastructure-v1';
+export const POLICY_IDS: PolicyId[] = ['standard-saas-v1', 'strict-infrastructure-v1'];
+export type PolicyDecision = 'approve' | 'approve_with_conditions' | 'human_review' | 'reject';
+
+export interface PolicyResult {
+  policyId: PolicyId;
+  policyVersion: string;
+  decision: PolicyDecision;
+  reasonCodes: string[]; // tied to real findings/score
+  requiredActions: { findingId: string; action: string }[];
+  decidedAtUtc: string;
+  statement: string;
+  scoreConsidered: number;
+  riskBandConsidered: string;
+}
+
+const POLICY_VERSION = '1.0';
+const STATEMENT = 'This is an automated technical pre-screen of public web-security posture — not a security certification, penetration test, or guarantee.';
+
+/** Deterministic onboarding decision from a VERIFIED vendor report. Never invents
+ *  facts; every reason code references an observed finding or the computed score. */
+export function evaluatePolicy(policyId: PolicyId, report: VendorSecurityAssessmentReport, decidedAtUtc: string): PolicyResult {
+  const findings = report.findings || [];
+  const has = (sev: Severity) => findings.some((f) => f.severity === sev);
+  const criticals = findings.filter((f) => f.severity === 'critical');
+  const highs = findings.filter((f) => f.severity === 'high');
+  const conditionable = findings.filter((f) => f.severity === 'high' || f.severity === 'medium');
+  const reasonCodes: string[] = [];
+  const requiredActions = conditionable.map((f) => ({ findingId: f.id, action: f.remediation }));
+  const score = report.score;
+
+  const strict = policyId === 'strict-infrastructure-v1';
+  let decision: PolicyDecision;
+
+  if (criticals.length || report.riskBand === 'critical') {
+    // A critical transport/identity failure can NEVER approve.
+    decision = strict ? 'reject' : 'human_review';
+    reasonCodes.push(...criticals.map((f) => `critical:${f.id}`));
+    if (!criticals.length) reasonCodes.push('critical:risk_band');
+  } else if (strict) {
+    if (highs.length) { decision = 'human_review'; reasonCodes.push(...highs.map((f) => `high:${f.id}`)); }
+    else if (score >= 90 && !has('medium')) { decision = 'approve'; reasonCodes.push(`score:${score}`); }
+    else if (score >= 75) { decision = 'approve_with_conditions'; reasonCodes.push(`score:${score}`, ...conditionable.map((f) => `condition:${f.id}`)); }
+    else if (score >= 50) { decision = 'human_review'; reasonCodes.push(`score:${score}`); }
+    else { decision = 'reject'; reasonCodes.push(`score:${score}`); }
+  } else {
+    if (highs.length && score < 65) { decision = 'human_review'; reasonCodes.push(...highs.map((f) => `high:${f.id}`)); }
+    else if (score >= 85 && !highs.length) { decision = 'approve'; reasonCodes.push(`score:${score}`); }
+    else if (score >= 65) { decision = 'approve_with_conditions'; reasonCodes.push(`score:${score}`, ...conditionable.map((f) => `condition:${f.id}`)); }
+    else if (score >= 40) { decision = 'human_review'; reasonCodes.push(`score:${score}`); }
+    else { decision = 'reject'; reasonCodes.push(`score:${score}`); }
+  }
+
+  return {
+    policyId, policyVersion: POLICY_VERSION, decision,
+    reasonCodes, requiredActions, decidedAtUtc, statement: STATEMENT,
+    scoreConsidered: score, riskBandConsidered: report.riskBand,
+  };
+}

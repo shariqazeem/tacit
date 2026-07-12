@@ -4,8 +4,17 @@
 import assert from 'node:assert';
 import {
   getService, isRegisteredService, listPublicServices, SERVICE_IDS, DEFAULT_SERVICE,
-  VENDOR_SERVICE, LEGACY_SITE_AUDIT, canonicalize, utf8Bytes,
+  VENDOR_SERVICE, LEGACY_SITE_AUDIT, canonicalize, utf8Bytes, evaluatePolicy, POLICY_IDS,
 } from '../runner/dist/_shared.js';
+
+const vendorReport = (over = {}) => ({
+  service: 'vendor_security_assessment', version: 1, methodologyVersion: 'vsa-1.0', scoringVersion: 'vsa-score-1',
+  requestedUrl: 'https://x.com', finalUrl: 'https://x.com/', hostname: 'x.com', pageTitle: null,
+  assessmentStartedAtUtc: 't', assessmentEndedAtUtc: 't', durationMs: 1, httpStatus: 200,
+  redirectChain: [], contentType: 'text/html', sampledByteLength: 1, tls: { ok: true, authorized: true },
+  securityHeaders: {}, cookies: { count: 0, secure: 0, httpOnly: 0, sameSite: 0 }, dns: {}, securityTxt: { status: 'present', httpStatus: 200 },
+  findings: [], score: 90, riskBand: 'strong', scoringBreakdown: [{ key: 'base', label: 'b', points: 100, observed: 'x' }], limitations: 'passive', ...over,
+});
 
 let pass = 0, fail = 0;
 const t = (name, fn) => { try { fn(); console.log('  ✅ ' + name); pass++; } catch (e) { console.error('  ❌ ' + name + ' — ' + e.message); fail++; } };
@@ -93,5 +102,35 @@ t('public metadata carries no policy/internal fields', () => {
   }
 });
 
-console.log(fail ? `\n❌ ${fail} test(s) failed` : `\n✅ all ${pass} service registry tests passed`);
+t('policy: clean strong report → approve (standard)', () => {
+  const d = evaluatePolicy('standard-saas-v1', vendorReport({ score: 90, riskBand: 'strong', findings: [] }), 'now');
+  assert.equal(d.decision, 'approve');
+  assert.ok(d.reasonCodes.length && d.policyVersion);
+});
+t('policy: critical transport can NEVER approve', () => {
+  const rep = vendorReport({ score: 20, riskBand: 'critical', findings: [{ id: 'tls_broken', severity: 'critical', category: 'transport', title: 't', evidence: 'e', remediation: 'r' }] });
+  assert.notEqual(evaluatePolicy('standard-saas-v1', rep, 'now').decision, 'approve');
+  assert.equal(evaluatePolicy('strict-infrastructure-v1', rep, 'now').decision, 'reject');
+});
+t('policy: mid score → conditions/review with actions tied to findings', () => {
+  const rep = vendorReport({ score: 70, riskBand: 'adequate', findings: [{ id: 'no_hsts', severity: 'medium', category: 'headers', title: 't', evidence: 'e', remediation: 'add hsts' }] });
+  const d = evaluatePolicy('standard-saas-v1', rep, 'now');
+  assert.equal(d.decision, 'approve_with_conditions');
+  assert.ok(d.requiredActions.some((a) => a.findingId === 'no_hsts'));
+});
+t('policy: strict is stricter than standard on the same report', () => {
+  const rep = vendorReport({ score: 80, riskBand: 'adequate', findings: [] });
+  assert.equal(evaluatePolicy('standard-saas-v1', rep, 'now').decision, 'approve_with_conditions');
+  assert.equal(evaluatePolicy('strict-infrastructure-v1', rep, 'now').decision, 'approve_with_conditions');
+  const clean = vendorReport({ score: 88, riskBand: 'strong', findings: [] });
+  assert.equal(evaluatePolicy('standard-saas-v1', clean, 'now').decision, 'approve');
+  assert.equal(evaluatePolicy('strict-infrastructure-v1', clean, 'now').decision, 'approve_with_conditions', 'strict needs >=90');
+});
+t('policy: deterministic (same input → same decision)', () => {
+  const rep = vendorReport({ score: 55 });
+  assert.deepEqual(evaluatePolicy('standard-saas-v1', rep, 'now'), evaluatePolicy('standard-saas-v1', rep, 'now'));
+  assert.deepEqual(POLICY_IDS, ['standard-saas-v1', 'strict-infrastructure-v1']);
+});
+
+console.log(fail ? `\n❌ ${fail} test(s) failed` : `\n✅ all ${pass} service registry + policy tests passed`);
 process.exit(fail ? 1 : 0);

@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { procureWork } from '@/app/lens/ledger/work';
 import { WORK_SCHEMA, type WorkError } from '@/app/lens/ledger/workTypes';
-import { getService, DEFAULT_SERVICE } from '@/shared/services';
+import { getService, DEFAULT_SERVICE, POLICY_IDS, type PolicyId } from '@/shared/services';
 import { fetchRunners, quorumFor } from '@/app/lens/ledger/runnerHealth';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,7 @@ export async function POST(req: Request) {
   const rawBudget = body?.maxBudget;
   const buyerName = typeof body?.buyerName === 'string' ? body.buyerName.slice(0, 64) : undefined;
   const requestSource = body?.requestSource === 'mcp' ? 'mcp' : 'browser';
+  const policyId: PolicyId | undefined = POLICY_IDS.includes(body?.policyId) ? body.policyId : undefined;
 
   if (!jobId) return fail('jobId required ([A-Za-z0-9._:-]{3,64})', 400);
 
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
   if (!q.quorum) return fail(`${serviceType} is supported by ${q.supported}/3 provider runners — not ready`, 503);
 
   try {
-    const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource });
+    const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource, policyId });
     return NextResponse.json(result);
   } catch (e: any) {
     return fail(String(e?.message || e), 502);

@@ -18,7 +18,7 @@ import {
 import {
   WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type ServiceReport, type BidView,
 } from './workTypes';
-import { getService } from '@/shared/services';
+import { getService, evaluatePolicy, POLICY_IDS, VENDOR_SERVICE, type PolicyId, type PolicyResult, type VendorSecurityAssessmentReport } from '@/shared/services';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
 const CORE_PKG_ID = PACKAGE_ID || 'fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff';
@@ -62,6 +62,14 @@ export interface WorkParams {
   maxBudget: number;
   buyerName?: string;
   requestSource?: 'browser' | 'mcp';
+  policyId?: PolicyId;
+}
+
+/** Buyer's deep acceptance verification (order matters; ALL must pass to Accept). */
+function recomputeVendorScoreOk(r: VendorSecurityAssessmentReport): boolean {
+  const sum = Math.max(0, Math.min(100, Math.round((r.scoringBreakdown || []).reduce((s, c) => s + c.points, 0))));
+  const criticalTransport = (r.scoringBreakdown || []).some((c) => c.key === 'tls_broken' || c.key === 'cert_expired');
+  return r.score === (criticalTransport ? Math.min(sum, 39) : sum);
 }
 
 export async function procureWork(
@@ -225,11 +233,32 @@ export async function procureWork(
   }
 
   const deliveryCid = delivery?.contractId || '';
+
+  // Buyer acceptance verification — in order: hash → length → strict parse → schema →
+  // request/report binding → deterministic score recompute. ALL must pass before Accept.
+  const bv = { hashOk: false, lengthOk: false, schemaOk: false, bindingOk: false, scoreOk: false, verified: false };
+  let verifiedReport: VendorSecurityAssessmentReport | null = null;
+  if (delivery) {
+    const hl = verifyDelivery(reportJson, reportSha, reportLen);
+    bv.hashOk = hl.computedSha === reportSha;
+    bv.lengthOk = hl.computedLen === reportLen;
+    const parsed = safeParse(reportJson);
+    const schemaVal = parsed != null ? svc.validateReport(parsed) : ({ ok: false, error: 'unparseable' } as const);
+    bv.schemaOk = schemaVal.ok === true;
+    bv.bindingOk = schemaVal.ok === true && svc.bindsToRequest(schemaVal.value, inputVal.value).ok === true;
+    if (params.serviceType === VENDOR_SERVICE) {
+      bv.scoreOk = schemaVal.ok === true && recomputeVendorScoreOk(schemaVal.value as VendorSecurityAssessmentReport);
+      if (schemaVal.ok === true) verifiedReport = schemaVal.value as VendorSecurityAssessmentReport;
+    } else {
+      bv.scoreOk = true; // legacy site_audit has no scoring breakdown to recompute
+    }
+    bv.verified = bv.hashOk && bv.lengthOk && bv.schemaOk && bv.bindingOk && bv.scoreOk;
+  }
+
   if (delivery && !receipt) {
-    const check = verifyDelivery(reportJson, reportSha, reportLen);
-    if (!check.ok) {
+    if (!bv.verified) {
       throw new Error(
-        `delivery hash/length verification FAILED (computed ${check.computedSha.slice(0, 12)}… vs committed ${reportSha.slice(0, 12)}…) — refusing to accept`,
+        `delivery verification FAILED (hash=${bv.hashOk} length=${bv.lengthOk} schema=${bv.schemaOk} binding=${bv.bindingOk} score=${bv.scoreOk}) — refusing to accept`,
       );
     }
     const receiptCid: string = await exercise(TW.PrivateDelivery, deliveryCid, 'Accept', { acceptedAt: new Date().toISOString() }, [buyer]);
@@ -242,6 +271,26 @@ export async function procureWork(
   // ── assemble the honest contract ─────────────────────────────────────────────
   const reportAvailable = !!delivery; // real bytes were loaded (and re-hashed) THIS request
   const report = reportAvailable ? (safeParse(reportJson) as ServiceReport | null) : null;
+
+  // Deterministic buyer policy decision — only from a VERIFIED vendor report.
+  const policyId: PolicyId = params.policyId && POLICY_IDS.includes(params.policyId) ? params.policyId : 'standard-saas-v1';
+  const policy: PolicyResult | null = verifiedReport ? evaluatePolicy(policyId, verifiedReport, new Date().toISOString()) : null;
+
+  // agentTrace — ONLY events that actually occurred (no fabricated reasoning).
+  const agentTrace: { step: string; detail: string }[] = [
+    { step: 'request_opened', detail: rfsId },
+    { step: 'bids_received', detail: `${collectedBids.length} sealed bids collected this request` },
+    { step: 'award_settled', detail: `${settlementCid.slice(0, 12)}…` },
+    { step: 'assignment_created', detail: `${assignmentCid.slice(0, 12)}…` },
+    ...(reportAvailable
+      ? [
+          { step: 'delivery_received', detail: `${deliveryCid.slice(0, 12)}…` },
+          { step: 'delivery_verified', detail: `hash+length+schema+binding${params.serviceType === VENDOR_SERVICE ? '+score' : ''} verified` },
+          { step: 'receipt_created', detail: `${receipt!.contractId.slice(0, 12)}…` },
+        ]
+      : [{ step: 'resumed', detail: 'existing receipt recovered (report body not reloaded)' }]),
+    ...(policy ? [{ step: 'policy_evaluated', detail: `${policy.policyId} → ${policy.decision}` }] : []),
+  ];
 
   return {
     ok: true,
@@ -287,6 +336,9 @@ export async function procureWork(
       resumed,
       historicalArtifactNotLoaded: !reportAvailable,
     },
+    buyerVerification: bv,
+    policy,
+    agentTrace,
     visibility: {
       available: didAward,
       personas: [...WORK_PERSONAS],

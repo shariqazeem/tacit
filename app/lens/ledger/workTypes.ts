@@ -10,8 +10,8 @@ export type Persona = (typeof WORK_PERSONAS)[number];
 
 // Report types come from the shared registered-service contract (discriminated by
 // `service` + `version`), so the app, MCP, runner and UI never diverge.
-import type { ServiceReport } from '@/shared/services';
-export type { ServiceReport, SiteAuditReport, VendorSecurityAssessmentReport } from '@/shared/services';
+import type { ServiceReport, PolicyResult } from '@/shared/services';
+export type { ServiceReport, SiteAuditReport, VendorSecurityAssessmentReport, PolicyResult } from '@/shared/services';
 
 export interface BidView {
   provider: string; // full party id
@@ -53,6 +53,21 @@ export interface WorkResumption {
   resumed: boolean;
   /** True when this was a replay whose accepted report body could not be reloaded. */
   historicalArtifactNotLoaded: boolean;
+}
+
+/** Buyer's deep acceptance verification — each check is independent and must pass. */
+export interface BuyerVerification {
+  hashOk: boolean;
+  lengthOk: boolean;
+  schemaOk: boolean;
+  bindingOk: boolean;
+  scoreOk: boolean;
+  verified: boolean;
+}
+
+export interface AgentTraceEvent {
+  step: string;
+  detail: string;
 }
 
 /**
@@ -101,6 +116,9 @@ export interface WorkResult {
   artifact: WorkArtifact;
   evidence: WorkEvidence;
   resumption: WorkResumption;
+  buyerVerification: BuyerVerification;
+  policy: PolicyResult | null;
+  agentTrace: AgentTraceEvent[];
   visibility: VisibilitySnapshot;
 }
 
