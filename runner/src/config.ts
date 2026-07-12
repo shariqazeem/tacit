@@ -50,9 +50,9 @@ export function loadConfig(): RunnerConfig {
     minPrice: num('RUNNER_MIN_PRICE', 1),
     pollMs: num('RUNNER_POLL_MS', 2500),
     stateFile: process.env.RUNNER_STATE_FILE || `/tmp/tacit-runner-${req('RUNNER_PROVIDER_ID')}.json`,
-    // Advertise ONLY services this runner can actually execute. Phase 1 ships the
-    // site_audit adapter; the vendor adapter (and its advertisement) arrives in Phase 3.
-    services: (process.env.RUNNER_SERVICES || 'site_audit')
+    // Advertise ONLY services this runner can actually execute. Ships both the
+    // vendor_security_assessment adapter (launch service) and the legacy site_audit.
+    services: (process.env.RUNNER_SERVICES || 'vendor_security_assessment,site_audit')
       .split(',').map((s) => s.trim()).filter(Boolean),
     apiUrl: req('TACIT_V2_API_URL'),
     tokenUrl: req('TACIT_DEVNET_TOKEN_URL'),

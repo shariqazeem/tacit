@@ -8,6 +8,31 @@ import { Canton } from './canton.js';
 import { loadState, saveState } from './state.js';
 import { startHealth } from './health.js';
 import { siteAudit } from './audit.js';
+import { canonicalBytes } from './canonical.js';
+import { assessVendor } from './services/vendorAssessment.js';
+import { realObservers } from './services/vendorObservers.js';
+import { getService } from './_shared.js';
+
+// Execute a registered service adapter → canonical report bytes + hash + length.
+// Throws on failure so a failed execution NEVER becomes a delivery artifact.
+async function executeService(serviceType: string, input: { url: string }) {
+  if (serviceType === 'vendor_security_assessment') {
+    const report = await assessVendor(input, realObservers);
+    return canonicalBytes(report);
+  }
+  if (serviceType === 'site_audit') {
+    return (await siteAudit(input)).canonical;
+  }
+  throw new Error(`no execution adapter for ${serviceType}`);
+}
+
+function safeJson(s: unknown): unknown {
+  try {
+    return typeof s === 'string' ? JSON.parse(s) : s;
+  } catch {
+    return null;
+  }
+}
 
 const cfg = loadConfig();
 const canton = new Canton(cfg);
@@ -64,6 +89,13 @@ async function tickBids(): Promise<void> {
       log(`decline ${jobId}: unsupported service ${awr.serviceType}`);
       continue;
     }
+    // Validate the service input BEFORE pricing (again before execution).
+    const svc = getService(String(awr.serviceType));
+    const iv = svc ? svc.validateInput(safeJson(awr.serviceInput)) : ({ ok: false, error: 'unregistered' } as const);
+    if (iv.ok !== true) { log(`decline ${jobId}: invalid input (${iv.error})`); continue; }
+    // Decline unprofitable work (budget cannot clear this runner's private floor).
+    const budget = Number(awr.maxBudget);
+    if (!(budget * 0.98 >= cfg.minPrice)) { log(`decline ${jobId}: budget below private floor`); continue; }
     const price = priceFor(awr);
     const bidCid = await canton.create(T_BID, { rfsId: awr.rfsId, provider: cfg.party, buyer: awr.buyer, price: String(price) }, [cfg.party]);
     state.bids[jobId] = bidCid;
@@ -78,11 +110,25 @@ async function tickDeliveries(): Promise<void> {
     const jobId = String(a.jobId);
     if (state.deliveries[jobId]) continue;
     if (a.provider !== cfg.party) continue; // only the winner acts
-    if (a.serviceType !== 'site_audit') { log('unsupported serviceType', a.serviceType); continue; }
-    let input: { url: string };
-    try { input = JSON.parse(a.serviceInput); } catch { log('bad serviceInput json'); continue; }
-    log(`won ${jobId} — running site_audit on ${input.url}`);
-    const { canonical } = await siteAudit({ url: input.url });
+    const serviceType = String(a.serviceType);
+    if (!cfg.services.includes(serviceType)) { log(`cannot execute unsupported service ${serviceType}`); continue; }
+    // Re-validate the service input via the registry before executing.
+    const svc = getService(serviceType);
+    const inputVal = svc ? svc.validateInput(safeJson(a.serviceInput)) : { ok: false, error: 'unregistered' } as const;
+    if (inputVal.ok !== true) { log(`bad serviceInput for ${jobId}: ${inputVal.error}`); continue; }
+    const input = inputVal.value;
+    log(`won ${jobId} — executing ${serviceType} on ${input.url}`);
+    runnerState = 'busy';
+    let canonical;
+    try {
+      canonical = await executeService(serviceType, input);
+    } catch (e) {
+      // Execution failed → do NOT submit a success artifact. Record + move on.
+      runnerState = 'ready';
+      log(`execution failed for ${jobId}: ${(e as Error).message}`);
+      continue;
+    }
+    runnerState = 'ready';
     const delivCid = await canton.exercise(
       T_ASSIGN, contractId, 'SubmitDelivery',
       // byteLen is a Daml Int → the JSON Ledger API requires Int64 as a string.
@@ -91,7 +137,7 @@ async function tickDeliveries(): Promise<void> {
     );
     state.deliveries[jobId] = String(delivCid);
     saveState(cfg.stateFile, state);
-    log(`delivered ${jobId} sha=${canonical.sha256.slice(0, 16)}… → ${String(delivCid).slice(0, 16)}…`);
+    log(`delivered ${jobId} (${serviceType}) sha=${canonical.sha256.slice(0, 16)}… → ${String(delivCid).slice(0, 16)}…`);
   }
 }
 
