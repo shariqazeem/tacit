@@ -47,7 +47,7 @@ export function WorkExperience() {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [planError, setPlanError] = useState('');
   const [url, setUrl] = useState('https://example.com');
-  const [budget, setBudget] = useState(25);
+  const [budget, setBudget] = useState(100);
   const [serviceType, setServiceType] = useState(DEFAULT_SVC);
   const [policyId, setPolicyId] = useState('standard-saas-v1');
   // Switch service → reset the policy to that service's first option.
@@ -251,7 +251,7 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
       <label htmlFor="goal" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Your goal</label>
       <textarea id="goal" value={goalText} onChange={(e) => setGoalText(e.target.value)} rows={3} maxLength={2000}
         aria-describedby="goal-hint" disabled={agentStep === 'planning'}
-        placeholder="We're onboarding acme.com as a vendor next week — vet them, budget 25, we're strict about infrastructure."
+        placeholder="We're onboarding acme.com as a vendor next week — vet them, budget 100, we're strict about infrastructure."
         className="mt-1.5 w-full resize-none rounded-xl px-3.5 py-2.5" style={{ background: C.bg, border: `1px solid ${C.hairline}`, color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.5, outlineColor: C.violet }} />
       <div id="goal-hint" className="mt-1.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>The agent turns this into a mandate you approve. Nothing is spent until you approve.</div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
