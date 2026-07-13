@@ -87,6 +87,29 @@ console.log('\nReal history:');
 must(m.totals.completedJobs >= 1, `completedJobs ≥ 1 (${m.totals.completedJobs})`);
 must(m.receipts.length >= 1, `receipts feed ≥ 1 (${m.receipts.length})`);
 
+// ── 2b) recent form: winsByService + recentWinShare, and REAL win diversity ──
+console.log('\nRecent form + win diversity:');
+must(m.providers.every((p) => p.winsByService && typeof p.recentWinShare === 'number' && typeof p.recentWins === 'number'), 'providers carry winsByService + recentWinShare');
+const wbsSum = m.providers.reduce((s, p) => s + Object.values(p.winsByService).reduce((a, b) => a + b, 0), 0);
+must(wbsSum === m.totals.completedJobs, `Σ winsByService == completedJobs (${wbsSum})`);
+const recentSum = m.providers.reduce((s, p) => s + p.recentWinShare, 0);
+must(m.totals.completedJobs === 0 || near(recentSum, 1, 0.03), `recentWinShares sum to ~1 (${recentSum.toFixed(3)})`);
+const distinctRecent = m.providers.filter((p) => p.recentWins > 0).length;
+must(distinctRecent >= 2, `≥2 distinct winners within the last 15 receipts (${distinctRecent}) — real competition`);
+
+// ── 2c) un-killable default flow: a default-budget job always gathers 3 bids ──
+console.log('\nUn-killable default flow (default budget = 100):');
+const jobId = 'mkt-' + crypto.createHash('sha256').update(APP_URL + String(Date.now())).digest('hex').slice(0, 12);
+let pj = null;
+try {
+  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180000);
+  const pr = await fetch(APP_URL + '/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId, serviceType: 'vendor_security_assessment', input: { url: 'https://example.com' }, maxBudget: 100, policyId: 'standard-saas-v1', buyerName: 'Judge-Agent' }), signal: ctrl.signal });
+  clearTimeout(timer); pj = await pr.json().catch(() => null);
+  must(pr.status === 200 && pj?.ok === true, `default-budget procurement completed (HTTP ${pr.status})`);
+} catch (e) { bad(`default-budget procurement failed: ${String(e?.message || e)}`); }
+must(Array.isArray(pj?.bids) && pj.bids.length === 3, `default-budget job gathered 3 bids (${pj?.bids?.length ?? 0}) — no timeout`);
+must(!pj?.bids || pj.bids.every((b) => b.price <= 100), 'all 3 bids fell within the default budget');
+
 // ── 3) independent recompute of per-provider treasury (raw auditor queries) ──
 console.log('\nIndependent recompute (raw auditor Canton queries):');
 let auditorSettles = [], auditorReceipts = [];
@@ -158,7 +181,7 @@ console.log('\n=== MARKET EVIDENCE ===');
 console.log(JSON.stringify({
   viewer: m.viewer, asOfUtc: m.asOfUtc, completedJobs: m.totals.completedJobs, totalVolume: `${m.totals.totalVolume} ${m.currency}`,
   perService: m.totals.perService, capableAgents: m.meta?.capableAgents, servicesLive: m.meta?.servicesLive,
-  providers: m.providers.map((p) => ({ label: p.label, earned: p.earned, wins: p.wins, winShare: p.winShare, ready: p.ready })),
+  providers: m.providers.map((p) => ({ label: p.label, earned: p.earned, wins: p.wins, winShare: p.winShare, winsByService: p.winsByService, recentWinShare: p.recentWinShare, ready: p.ready })),
   topReceipt: m.receipts[0], degradation: m.degradation,
 }, null, 2));
 

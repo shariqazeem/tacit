@@ -54,11 +54,17 @@ export interface MarketProvider {
   label: string;
   partyShort: string;
   earned: number; // auditor-derived sum of this provider's Settlement amounts
-  wins: number; // completed jobs (accepted receipts) won
-  winShare: number; // wins / completedJobs, 0..1
+  wins: number; // completed jobs (accepted receipts) won, all-time
+  winShare: number; // wins / completedJobs, 0..1 (all-time)
+  winsByService: Record<string, number>; // per-service wins (from receipt.serviceType)
+  recentWins: number; // wins within the most recent RECENT_WINDOW receipts
+  recentWinShare: number; // recentWins / min(RECENT_WINDOW, completedJobs), 0..1
   servicesAdvertised: string[];
   ready: boolean;
 }
+
+/** Trailing window (most-recent receipts) for the "recent form" win share. */
+export const RECENT_WINDOW = 15;
 
 export interface MarketReceiptRow {
   acceptedAtUtc: string;
@@ -124,6 +130,7 @@ export function buildMarketOverview(
   // stay mutually consistent: totalVolume == Σ perService.volume == Σ provider.earned.
   const earnedByParty = new Map<string, number>();
   const winsByParty = new Map<string, number>();
+  const winsByServiceByParty = new Map<string, Record<string, number>>();
   let totalVolume = 0;
   let unjoinedAmount = 0;
   let missingService = 0;
@@ -131,6 +138,11 @@ export function buildMarketOverview(
 
   for (const r of receipts) {
     winsByParty.set(r.providerParty, (winsByParty.get(r.providerParty) || 0) + 1);
+    if (r.serviceType) {
+      const m = winsByServiceByParty.get(r.providerParty) || {};
+      m[r.serviceType] = (m[r.serviceType] || 0) + 1;
+      winsByServiceByParty.set(r.providerParty, m);
+    }
     const joined = settleByRfs.get(r.rfsId) || null;
     const amt = joined ? Number(joined.amount) || 0 : 0;
     if (joined) {
@@ -149,8 +161,15 @@ export function buildMarketOverview(
     }
   }
 
+  // Recent form: wins within the most recent RECENT_WINDOW receipts (by acceptedAt).
+  const recentReceipts = receipts.slice().sort((a, b) => (a.acceptedAtUtc < b.acceptedAtUtc ? 1 : a.acceptedAtUtc > b.acceptedAtUtc ? -1 : 0)).slice(0, RECENT_WINDOW);
+  const recentTotal = recentReceipts.length;
+  const recentWinsByParty = new Map<string, number>();
+  for (const r of recentReceipts) recentWinsByParty.set(r.providerParty, (recentWinsByParty.get(r.providerParty) || 0) + 1);
+
   const providers: MarketProvider[] = roster.map((p) => {
     const wins = winsByParty.get(p.party) || 0;
+    const recentWins = recentWinsByParty.get(p.party) || 0;
     return {
       id: p.id,
       label: p.label,
@@ -158,6 +177,9 @@ export function buildMarketOverview(
       earned: round2(earnedByParty.get(p.party) || 0),
       wins,
       winShare: completedJobs > 0 ? Math.round((wins / completedJobs) * 1000) / 1000 : 0,
+      winsByService: winsByServiceByParty.get(p.party) || {},
+      recentWins,
+      recentWinShare: recentTotal > 0 ? Math.round((recentWins / recentTotal) * 1000) / 1000 : 0,
       servicesAdvertised: p.servicesAdvertised,
       ready: p.ready,
     };

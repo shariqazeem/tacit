@@ -146,6 +146,8 @@ function StatRow({ d, refreshing }: { d: MarketData; refreshing: boolean }) {
 
 function ProviderCard({ p }: { p: MarketProvider }) {
   const pct = Math.round(p.winShare * 100);
+  const recentPct = Math.round(p.recentWinShare * 100);
+  const svcWins = Object.entries(p.winsByService).sort((a, b) => b[1] - a[1]);
   return (
     <Card>
       <div className="flex items-center justify-between">
@@ -171,12 +173,31 @@ function ProviderCard({ p }: { p: MarketProvider }) {
 
       <div className="mt-3">
         <div className="flex items-center justify-between" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 10.5 }}>
-          <span>Win share</span><span>{pct}%</span>
+          <span>Win share · all-time</span><span>{pct}%</span>
         </div>
-        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'rgba(10,10,11,0.06)' }} role="img" aria-label={`win share ${pct} percent`}>
+        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'rgba(10,10,11,0.06)' }} role="img" aria-label={`all-time win share ${pct} percent`}>
           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: C.violet, transition: 'width 0.4s ease' }} />
         </div>
       </div>
+
+      <div className="mt-2">
+        <div className="flex items-center justify-between" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 10.5 }}>
+          <span>Recent form · last 15 jobs</span><span>{recentPct}%</span>
+        </div>
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full" style={{ background: 'rgba(10,10,11,0.06)' }} role="img" aria-label={`recent win share ${recentPct} percent`}>
+          <div className="h-full rounded-full" style={{ width: `${recentPct}%`, background: C.live, transition: 'width 0.4s ease' }} />
+        </div>
+      </div>
+
+      {svcWins.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {svcWins.map(([s, n]) => (
+            <span key={s} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5" style={{ background: C.surface, color: C.ink2, fontFamily: FONT.sans, fontSize: 10.5, border: `1px solid ${C.hairline}` }}>
+              {svcLabel(s)} <span className="tacit-num" style={{ color: C.ink, fontSize: 10.5 }}>{n}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {p.servicesAdvertised.length === 0

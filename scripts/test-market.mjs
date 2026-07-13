@@ -51,6 +51,22 @@ const receipts = [
   assert.ok(Math.abs(sumShare - 1) < 1e-9, 'winShares sum to 1');
   ok('winShares across providers sum to exactly 1');
 
+  // per-service wins: A won 1 vendor + 1 perf; B won 1 perf; C won 1 vendor
+  assert.deepEqual(A.winsByService, { vendor_security_assessment: 1, web_performance_probe: 1 }, 'A winsByService');
+  assert.deepEqual(B.winsByService, { web_performance_probe: 1 }, 'B winsByService');
+  const sumWbs = o.providers.reduce((s, p) => s + Object.values(p.winsByService).reduce((a, b) => a + b, 0), 0);
+  assert.equal(sumWbs, o.totals.completedJobs, 'Σ winsByService == completedJobs');
+  ok('winsByService: per-service win counts sum to completed jobs');
+
+  // recent form: all 4 receipts fall in the last-15 window → shares == all-time here
+  assert.equal(A.recentWinShare, 0.5, 'A recentWinShare 2/4');
+  assert.equal(B.recentWinShare, 0.25, 'B recentWinShare 1/4');
+  const sumRecent = o.providers.reduce((s, p) => s + p.recentWinShare, 0);
+  assert.ok(Math.abs(sumRecent - 1) < 1e-9, 'recentWinShares sum to 1');
+  const distinctRecentWinners = o.providers.filter((p) => p.recentWins > 0).length;
+  assert.ok(distinctRecentWinners >= 2, 'at least 2 distinct winners in the recent window');
+  ok('recentWinShare over last 15 receipts; ≥2 distinct recent winners');
+
   assert.deepEqual(o.totals.perService, {
     vendor_security_assessment: { jobs: 2, volume: 35 },
     web_performance_probe: { jobs: 2, volume: 55 },
@@ -105,6 +121,10 @@ const receipts = [
   const o = buildMarketOverview([], many, roster, meta);
   assert.equal(o.receipts.length, 50, 'capped at 50');
   for (let i = 1; i < o.receipts.length; i++) assert.ok(o.receipts[i - 1].acceptedAtUtc >= o.receipts[i].acceptedAtUtc, 'monotonic reverse-chron');
+  // recent form uses a bounded window even with 60 receipts (all A here → A recent share 1.0)
+  const A2 = o.providers.find((p) => p.id === 'providerA');
+  assert.equal(A2.recentWins, 15, 'recentWins bounded to the 15-receipt window');
+  assert.equal(A2.recentWinShare, 1, 'A took every recent job → recent share 1.0');
   ok('receipts capped at 50, strictly reverse-chronological');
 }
 

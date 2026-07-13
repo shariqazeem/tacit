@@ -1,4 +1,6 @@
 // Runner configuration — entirely from private env. Secrets are never logged.
+import { parseServiceCost } from './pricing.js';
+
 export interface RunnerConfig {
   // identity
   providerId: string; // providerA | providerB | providerC (logical)
@@ -7,7 +9,8 @@ export interface RunnerConfig {
   instanceId: string; // unique per runner process
   healthPort: number; // 127.0.0.1 health port
   // private pricing policy (never returned to the buyer, never on-ledger)
-  baseCost: number;
+  baseCost: number; // fallback base cost when a service has no specialized cost
+  serviceCost: Record<string, number>; // per-service base cost overrides (specialization)
   margin: number;
   minPrice: number; // private floor; runner declines below this
   pollMs: number;
@@ -46,6 +49,8 @@ export function loadConfig(): RunnerConfig {
     instanceId: process.env.RUNNER_INSTANCE_ID || `${req('RUNNER_PROVIDER_ID')}-${process.pid}`,
     healthPort: num('RUNNER_HEALTH_PORT', 0),
     baseCost: num('RUNNER_BASE_COST', 20),
+    // Per-service base-cost specialization; malformed JSON is ignored (logged once).
+    serviceCost: parseServiceCost(process.env.RUNNER_SERVICE_COST_JSON, (m) => console.error(`[runner config] ${m}`)),
     margin: num('RUNNER_MARGIN', 0.35),
     minPrice: num('RUNNER_MIN_PRICE', 1),
     pollMs: num('RUNNER_POLL_MS', 2500),

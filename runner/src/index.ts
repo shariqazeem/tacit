@@ -14,6 +14,7 @@ import { realObservers } from './services/vendorObservers.js';
 import { probePerformance } from './services/performanceProbe.js';
 import { realPerfObservers } from './services/performanceObservers.js';
 import { getService } from './_shared.js';
+import { computeInFlight, quotePrice, type CostPolicy } from './pricing.js';
 
 // Execute a registered service adapter → canonical report bytes + hash + length.
 // Throws on failure so a failed execution NEVER becomes a delivery artifact.
@@ -71,21 +72,20 @@ startHealth(cfg.healthPort, () => ({
 
 const log = (...a: unknown[]) => console.log(`[${cfg.label} ${cfg.instanceId} pid=${process.pid}]`, ...a);
 
-// PRIVATE pricing: runner-local base cost + margin, adjusted by request complexity
-// and this runner's current in-flight load. Never a copy of a shared multiplier;
-// never returned to the buyer; never placed on Canton.
-function priceFor(awr: any): number {
-  const budget = Number(awr.maxBudget);
-  const inFlight = Math.max(0, Object.keys(state.bids).length - Object.keys(state.deliveries).length);
-  const complexity = 1 + Math.min(0.5, String(awr.serviceInput || '').length / 2000); // real signal from the request
-  const load = 1 + inFlight * 0.05;
-  const raw = cfg.baseCost * (1 + cfg.margin) * complexity * load;
-  const clamped = Math.max(cfg.baseCost, Math.min(raw, budget * 0.98));
-  return Math.round(clamped * 100) / 100;
-}
+// This runner's private cost policy (per-service base cost + margin). Never a copy of
+// a shared multiplier; never returned to the buyer; never placed on Canton or health.
+const costPolicy: CostPolicy = { baseCost: cfg.baseCost, margin: cfg.margin, serviceCost: cfg.serviceCost };
 
 async function tickBids(): Promise<void> {
   const awrs = await canton.query(cfg.party, T_AWR);
+  // Recompute REAL in-flight workload live each tick (see pricing.ts): won-but-
+  // undelivered assignments + own bids still awaiting award. A LOST bid clears
+  // immediately (its AWR is gone, no Assignment), so load never accumulates phantom.
+  const assigns = await canton.query(cfg.party, T_ASSIGN);
+  const openAwrJobIds = awrs.map((x) => String(x.payload.jobId));
+  const myAssignmentJobIds = assigns.filter((x) => x.payload.provider === cfg.party).map((x) => String(x.payload.jobId));
+  let inFlight = computeInFlight(state.deliveries, Object.keys(state.bids), openAwrJobIds, myAssignmentJobIds);
+
   for (const { payload: awr } of awrs) {
     const jobId = String(awr.jobId);
     if (state.bids[jobId]) continue; // durable: already bid this job
@@ -102,10 +102,11 @@ async function tickBids(): Promise<void> {
     // Decline unprofitable work (budget cannot clear this runner's private floor).
     const budget = Number(awr.maxBudget);
     if (!(budget * 0.98 >= cfg.minPrice)) { log(`decline ${jobId}: budget below private floor`); continue; }
-    const price = priceFor(awr);
+    const price = quotePrice(costPolicy, String(awr.serviceType), String(awr.serviceInput || ''), budget, inFlight);
     const bidCid = await canton.create(T_BID, { rfsId: awr.rfsId, provider: cfg.party, buyer: awr.buyer, price: String(price) }, [cfg.party]);
     state.bids[jobId] = bidCid;
     saveState(cfg.stateFile, state);
+    inFlight += 1; // this new pending bid is now real workload for subsequent same-tick quotes
     log(`bid ${price} on ${jobId} → ${bidCid.slice(0, 16)}…`);
   }
 }
