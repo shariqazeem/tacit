@@ -27,18 +27,26 @@ committed, content stayed private.
 - **Treasury integrity (proven live):** `npm run preflight:market` (**19 assertions**)
   recomputes each provider's treasury from an **independent raw-Canton auditor query**
   (zero shared code) and it matches exactly; it then reconciles against each provider's
-  active `Iou` balance, **scoped to work-path**. Example: Provider C's raw Iou balance
-  `915.89` = work treasury `533.12` + **`382.77` excess = pre-existing negotiate-demo
-  Ious** (reported, not asserted away — the auditor cannot see Ious, so this read is
-  done as each provider).
-- **Runner pricing (forward-only):** the three runners already bid as distinct parties
-  with private cost structures. Their `run-runner.sh` spread was wide (C always
-  cheapest → C won all 26 historical jobs). We **tightened it to a competitive band**
-  (same base cost `20`; margins `0.25 / 0.26 / 0.27`) so the real-time **load** factor
-  (a busy agent bids higher) decides the winner and winners rotate under concurrent
-  demand. This changes **future real bids only** — recorded history is untouched, no
-  randomness, no scripted outcomes. Under strictly sequential demand the lowest-idle-cost
-  agent still wins (an honest market outcome).
+  active `Iou` balance, **scoped to work-path**. Live example (asserted by the preflight,
+  numbers grow as jobs run): Provider C's raw Iou balance `1031.07` = work treasury `614.3`
+  + **`416.77` excess = pre-existing negotiate-demo Ious** (reported, not asserted away —
+  the auditor cannot see Ious, so this read is done as each provider; A and B sit at `0`).
+  The market's displayed volume sums **only auditor-observed** settlements, so the old
+  negotiate-demo deals (no auditor observer) correctly never appear.
+- **Win distribution (honest, not engineered):** Provider C has won every completed
+  job. We inspected why before touching anything. The three runners already bid as
+  **distinct parties with genuinely different private cost structures** (base/margin
+  `22 / 0.4`, `30 / 0.5`, `15 / 0.3`) — i.e. pricing was **already distinct, not the
+  identical/degenerate case** the spec's optional pricing change targets, so we left it
+  **unchanged**. C dominates for two honest reasons: (1) it is the genuine low-cost
+  bidder, and (2) a **rich-get-richer load dynamic** in the runner's private pricing —
+  `load = 1 + (bids − deliveries)·0.05` — means a runner that keeps losing accumulates
+  its un-cleared losing bids as phantom in-flight load and prices itself *further* out,
+  while the winner stays un-loaded and cheap. Flattening this would require changing the
+  **runner loop, which this pass leaves untouched** (work path is read-only here). We do
+  **not** randomize, script, or reinterpret history — the market shows the real outcome:
+  an incumbent low-cost agent. (Sealed bids themselves stay private; the market never
+  shows a bid, only the settled amount.)
 - **MCP 0.6.0:** `tacit_market_overview {}` gives an agent the same auditor view — check
   a provider's track record before hiring, without seeing anything private.
 - **Live:** https://tacit.80-225-209-190.sslip.io/market. `demo:check` asserts it healthy.

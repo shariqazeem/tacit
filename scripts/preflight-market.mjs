@@ -70,7 +70,9 @@ if (r1.status !== 200 || r1.json?.available !== true) { console.error(`❌ overv
 const m = r1.json;
 must(m.viewer === 'auditor' && m.ledgerDerived === true, 'viewer=auditor, ledger-derived');
 const ageMs = Date.now() - new Date(m.asOfUtc).getTime();
-must(!isNaN(ageMs) && ageMs >= 0 && ageMs < 120000, `asOfUtc is sane + fresh (${Math.round(ageMs / 1000)}s old)`);
+// Allow a few seconds of negative skew: the app's clock may be slightly ahead of
+// the machine running this preflight, making a just-computed asOfUtc look "future".
+must(!isNaN(ageMs) && ageMs > -10000 && ageMs < 120000, `asOfUtc is sane + fresh (${Math.round(ageMs / 1000)}s old)`);
 must(m.currency === 'USD.demo', 'currency labeled USD.demo (demo credits)');
 must(Array.isArray(m.providers) && m.providers.length === 3 && Array.isArray(m.receipts), 'providers[3] + receipts[] present');
 must(m.totals && typeof m.totals.completedJobs === 'number' && typeof m.totals.totalVolume === 'number', 'totals well-formed');

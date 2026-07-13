@@ -65,8 +65,11 @@ bodies, or any `http(s)://` target (we drop the on-ledger `title`, which can emb
 raw-Canton auditor recompute matches the displayed treasury exactly, and each provider's `Iou` balance
 reconciles when scoped to work-path (the excess is pre-existing negotiate-demo Ious, reported). MCP
 `tacit_market_overview` exposes the same auditor view so an agent can check a provider's track record
-before hiring. Runner pricing was tightened to a competitive band (same base, margins 0.25/0.26/0.27)
-so real-time load decides the winner going forward — history untouched.
+before hiring. Provider C has won every job — honestly, not by design: the runners already price with
+distinct cost structures (base/margin 22/0.4, 30/0.5, 15/0.3), so C is the genuine low-cost bidder, and
+a rich-get-richer load term in the runner's private pricing (`load = 1 + (bids − deliveries)·0.05`)
+reinforces the incumbent. Flattening that would mean changing the runner loop, which this pass leaves
+untouched; we do not script outcomes. The market shows the real distribution.
 
 ---
 
