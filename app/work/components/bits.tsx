@@ -46,16 +46,43 @@ export function CopyId({ id, label }: { id: string; label?: string }) {
   );
 }
 
-/** A crisp-or-frosted field cell for the Work Privacy Lens. */
-export function LensCell({ visible, children }: { visible: boolean; children: ReactNode }) {
-  if (visible) return <span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 13 }}>{children}</span>;
+/** The mono "Sealed" caption with a lock — the honest label for ledger-withheld data. */
+export function Sealed({ label = 'Sealed' }: { label?: string }) {
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
-      style={{ background: 'rgba(10,10,11,0.04)', color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.08em', filter: 'blur(0.15px)' }}
-      aria-label="private — not visible to this party"
-    >
-      <span aria-hidden>🔒</span> PRIVATE
+    <span className="tacit-sealed" aria-label={`${label} — the ledger withholds this from this party`}>
+      <LockGlyph />
+      {label}
+    </span>
+  );
+}
+
+/** A small designed lock glyph (currentColor). */
+export function LockGlyph({ size = 10 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" aria-hidden style={{ display: 'block' }}>
+      <rect x="2.25" y="5.25" width="7.5" height="5.25" rx="1.1" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 5.25V4a2 2 0 1 1 4 0v1.25" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+/** FROST material — for ledger-sealed facts ONLY. Optionally carries a Sealed caption. */
+export function Frost({ children, sealed = false, label, style }: { children?: ReactNode; sealed?: boolean; label?: string; style?: React.CSSProperties }) {
+  return (
+    <span className="material-frost inline-flex items-center gap-2 px-2.5 py-1" style={style}>
+      {children}
+      {sealed && <Sealed label={label} />}
+    </span>
+  );
+}
+
+/** A crisp value (CLEAR) or a frosted "Sealed" block (FROST) for the Work Privacy Lens.
+ *  Frost appears only when the ledger genuinely withholds the field from this party. */
+export function LensCell({ visible, children }: { visible: boolean; children: ReactNode }) {
+  if (visible) return <span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{children}</span>;
+  return (
+    <span className="material-frost inline-flex items-center px-2 py-0.5" style={{ borderRadius: 999 }} aria-label="sealed — not visible to this party">
+      <Sealed />
     </span>
   );
 }

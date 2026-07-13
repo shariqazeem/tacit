@@ -20,9 +20,21 @@ export const C = {
   fallback: '#B45309',
 } as const;
 
+// Semantic decision palette — used ONLY on decision surfaces. Mirrors globals.css.
+export const DECISION: Record<string, { fg: string; soft: string; label: string }> = {
+  approve: { fg: '#0F766E', soft: 'rgba(15,118,110,0.09)', label: 'Approve' },
+  approve_with_conditions: { fg: '#B45309', soft: 'rgba(180,83,9,0.09)', label: 'Approve with conditions' },
+  human_review: { fg: '#4C1D95', soft: 'rgba(76,29,149,0.09)', label: 'Human review' },
+  reject: { fg: '#B02A2A', soft: 'rgba(176,42,42,0.09)', label: 'Reject' },
+};
+export const decisionOf = (d: string | null | undefined) => (d && DECISION[d]) || DECISION.human_review;
+
+// Fonts resolve through the CSS variables set by next/font on <html>, so inline
+// styles get the self-hosted faces (Fraunces / Inter / JetBrains Mono) too.
 export const FONT = {
-  sans: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-  mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace",
+  display: 'var(--font-display)',
+  sans: 'var(--font-sans)',
+  mono: 'var(--font-mono)',
 } as const;
 
 /**

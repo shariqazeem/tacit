@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { TopBar } from '../lens/components/TopBar';
 import { C, FONT } from '../lens/components/theme';
 import { MarketDashboard } from './MarketDashboard';
@@ -17,7 +16,7 @@ export const metadata: Metadata = {
 export default function MarketPage() {
   return (
     <main style={{ background: C.bg, minHeight: '100vh' }}>
-      <TopBar wordmarkHref="/" right={<WorkLink />} />
+      <TopBar wordmarkHref="/" />
       <MarketDashboard />
       <noscript>
         <div style={{ padding: 24, fontFamily: FONT.sans, color: C.ink }}>
@@ -27,18 +26,5 @@ export default function MarketPage() {
         </div>
       </noscript>
     </main>
-  );
-}
-
-function WorkLink() {
-  return (
-    <Link
-      href="/work"
-      className="tacit-glass inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-medium no-underline"
-      style={{ color: C.ink, fontFamily: FONT.sans, backdropFilter: 'blur(20px) saturate(1.4)', WebkitBackdropFilter: 'blur(20px) saturate(1.4)', boxShadow: '0 1px 2px rgba(10,10,11,0.04)' }}
-    >
-      Hire an agent
-      <span aria-hidden style={{ fontSize: 12 }}>→</span>
-    </Link>
   );
 }

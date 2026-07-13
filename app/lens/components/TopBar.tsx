@@ -1,14 +1,24 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { C, FONT, glassBlur } from './theme';
 import { SourceBadge } from './SourceBadge';
 
+const NAV = [
+  { href: '/work', label: 'Work' },
+  { href: '/market', label: 'Market' },
+  { href: '/lens', label: 'Lens' },
+] as const;
+
 /**
- * Minimal fixed chrome. Wordmark left; the right side is either the /lens
- * controls (source badge + Replay) or a caller-supplied `right` slot (used by
- * the landing page for "Open the Lens →"). Transparent over the hero, gaining
- * glass + hairline once scrolled. Chrome only — no data/visibility logic.
+ * Unified chrome across every product surface: display-face wordmark left; nav
+ * (Work · Market · Lens) + a live readiness dot right. Transparent over the hero,
+ * gaining one frosted layer + hairline once scrolled. Chrome only — the readiness
+ * dot reads the existing health endpoint; no other data/visibility logic.
+ *
+ * `right` overrides the nav (landing CTA); `showControls` appends the /lens replay.
  */
 export function TopBar({
   source = null,
@@ -16,17 +26,17 @@ export function TopBar({
   running = false,
   onReplay,
   right,
-  wordmarkHref = '/lens',
+  wordmarkHref = '/',
 }: {
   source?: 'ledger' | 'memory' | null;
   showControls?: boolean;
   running?: boolean;
   onReplay?: () => void;
-  /** Optional right-side content; when set, it replaces the /lens controls. */
   right?: ReactNode;
   wordmarkHref?: string;
 }) {
   const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -47,60 +57,85 @@ export function TopBar({
       }}
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
-        {/* Wordmark */}
-        <a
-          href={wordmarkHref}
-          className="flex items-baseline gap-1 no-underline"
-          style={{ fontFamily: FONT.sans }}
-          aria-label="tacit — home"
-        >
-          <span
-            className="text-[16px] font-semibold lowercase"
-            style={{ color: C.ink, letterSpacing: '-0.02em' }}
-          >
-            tacit
-          </span>
-          <span
-            className="mb-0.5 inline-block h-[5px] w-[5px] rounded-full"
-            style={{ background: C.violet }}
-            aria-hidden
-          />
-        </a>
+        {/* Wordmark (display face) */}
+        <Link href={wordmarkHref} className="flex items-baseline gap-1 no-underline" aria-label="tacit — home">
+          <span style={{ fontFamily: FONT.display, fontSize: 20, fontWeight: 600, color: C.ink, letterSpacing: '-0.01em', lineHeight: 1 }}>tacit</span>
+          <span className="mb-0.5 inline-block h-[5px] w-[5px] rounded-full" style={{ background: C.violet }} aria-hidden />
+        </Link>
 
-        {/* Right slot (landing) takes precedence over the /lens controls. */}
-        {right}
-
-        {/* Controls */}
-        {!right && showControls && (
-          <div
-            className="tacit-glass flex items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1"
-            style={{ ...glassBlur, boxShadow: '0 1px 2px rgba(10,10,11,0.04)' }}
-          >
-            {source && <SourceBadge source={source} />}
-            <button
-              type="button"
-              onClick={onReplay}
-              disabled={running}
-              className="rounded-full px-3 py-1.5 text-[12px] font-medium"
-              style={{
-                fontFamily: FONT.sans,
-                color: running ? C.ink3 : C.ink,
-                background: 'rgba(10,10,11,0.04)',
-                cursor: running ? 'default' : 'pointer',
-                transition: 'background 0.18s var(--micro-ease), color 0.18s var(--micro-ease)',
-              }}
-              onMouseEnter={(e) => {
-                if (!running) e.currentTarget.style.background = 'rgba(10,10,11,0.08)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(10,10,11,0.04)';
-              }}
-            >
-              {running ? '● Negotiating…' : '↻ Replay'}
-            </button>
-          </div>
+        {right ? (
+          right
+        ) : (
+          <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
+            {NAV.map((n) => {
+              const active = pathname === n.href || !!pathname?.startsWith(n.href + '/');
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  aria-current={active ? 'page' : undefined}
+                  className="rounded-full px-3 py-1.5 no-underline"
+                  style={{
+                    fontFamily: FONT.sans,
+                    fontSize: 13.5,
+                    fontWeight: active ? 600 : 500,
+                    color: active ? C.ink : C.ink2,
+                    background: active ? 'rgba(10,10,11,0.05)' : 'transparent',
+                    transition: 'color 0.18s var(--micro-ease), background 0.18s var(--micro-ease)',
+                  }}
+                >
+                  {n.label}
+                </Link>
+              );
+            })}
+            <span className="mx-0.5 hidden h-4 w-px sm:inline-block" style={{ background: C.hairline }} aria-hidden />
+            <ReadinessDot />
+            {showControls && (
+              <span className="tacit-glass ml-1 flex items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1" style={{ ...glassBlur, boxShadow: '0 1px 2px rgba(10,10,11,0.04)' }}>
+                {source && <SourceBadge source={source} />}
+                <button
+                  type="button"
+                  onClick={onReplay}
+                  disabled={running}
+                  className="rounded-full px-3 py-1.5 text-[12px] font-medium"
+                  style={{ fontFamily: FONT.sans, color: running ? C.ink3 : C.ink, background: 'rgba(10,10,11,0.04)', cursor: running ? 'default' : 'pointer' }}
+                >
+                  {running ? '● Replaying…' : '↻ Replay'}
+                </button>
+              </span>
+            )}
+          </nav>
         )}
       </div>
     </header>
+  );
+}
+
+/** A small live dot fed by the existing /api/work/health endpoint. Fail-silent. */
+function ReadinessDot() {
+  const [state, setState] = useState<'unknown' | 'live' | 'degraded' | 'offline'>('unknown');
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch('/api/work/health', { cache: 'no-store' });
+        const j = await r.json();
+        if (!alive) return;
+        setState(j?.ok === true ? 'live' : j?.ledgerReachable ? 'degraded' : 'offline');
+      } catch {
+        if (alive) setState('offline');
+      }
+    };
+    check();
+    const id = setInterval(() => { if (!document.hidden) check(); }, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  const color = state === 'live' ? C.live : state === 'degraded' ? C.fallback : C.ink3;
+  const label = state === 'live' ? 'live · devnet' : state === 'degraded' ? 'degraded' : state === 'offline' ? 'offline' : 'checking';
+  return (
+    <span className="hidden items-center gap-1.5 rounded-full px-2.5 py-1 sm:inline-flex" style={{ background: 'rgba(10,10,11,0.03)', border: `1px solid ${C.hairline}` }} title={`Canton readiness: ${label}`} aria-live="polite">
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${state === 'live' ? 'tacit-pulse' : ''}`} style={{ background: color }} aria-hidden />
+      <span style={{ fontFamily: FONT.mono, fontSize: 10.5, color: C.ink2, letterSpacing: '0.02em' }}>{label}</span>
+    </span>
   );
 }
