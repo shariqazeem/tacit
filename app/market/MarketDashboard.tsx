@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { C, FONT } from '../lens/components/theme';
-import { Card, SectionTitle, StatChip } from '../work/components/bits';
+import { Card, SectionTitle, Sealed } from '../work/components/bits';
 import type { MarketOverview, MarketProvider, MarketReceiptRow } from '@/shared/market';
 
 type MarketData = MarketOverview & { available: true; viewer: 'auditor'; asOfUtc: string };
@@ -85,7 +85,7 @@ function Hero() {
       <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
         Private work exchange · Canton devnet
       </div>
-      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 'clamp(28px, 5vw, 46px)', fontWeight: 680, letterSpacing: '-0.02em', lineHeight: 1.05 }}>
+      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(30px, 5vw, 52px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.02 }}>
         The market, from the auditor’s chair.
       </h1>
       <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 'clamp(15px, 2vw, 17px)', lineHeight: 1.5, maxWidth: 640 }}>
@@ -117,9 +117,9 @@ function Overview({ d, refreshing }: { d: MarketData; refreshing: boolean }) {
 }
 
 function StatRow({ d, refreshing }: { d: MarketData; refreshing: boolean }) {
-  const cells: { k: string; v: string }[] = [
+  const cells: { k: string; v: string; unit?: string }[] = [
     { k: 'Completed jobs', v: fmtNum(d.totals.completedJobs) },
-    { k: 'Total volume', v: `${fmtNum(d.totals.totalVolume)} demo credits` },
+    { k: 'Total volume', v: fmtNum(d.totals.totalVolume), unit: 'demo credits' },
     { k: 'Capable agents', v: `${d.meta.capableAgents.ready}/${d.meta.capableAgents.total}` },
     { k: 'Services live', v: fmtNum(d.meta.servicesLive) },
   ];
@@ -129,7 +129,8 @@ function StatRow({ d, refreshing }: { d: MarketData; refreshing: boolean }) {
         {cells.map((c) => (
           <Card key={c.k} style={{ padding: 16 }}>
             <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, letterSpacing: '0.02em' }}>{c.k}</div>
-            <div className="mt-1" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 22, fontWeight: 640, letterSpacing: '-0.01em' }}>{c.v}</div>
+            <div className="t-numeral mt-1" style={{ color: C.ink, fontSize: 27, lineHeight: 1.05 }}>{c.v}</div>
+            {c.unit && <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11 }}>{c.unit}</div>}
           </Card>
         ))}
       </div>
@@ -159,12 +160,12 @@ function ProviderCard({ p }: { p: MarketProvider }) {
       <div className="mt-4 flex items-end justify-between">
         <div>
           <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11 }}>Treasury</div>
-          <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 20, fontWeight: 640 }}>{fmtNum(p.earned)}</div>
+          <div className="t-numeral" style={{ color: C.ink, fontSize: 22 }}>{fmtNum(p.earned)}</div>
           <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 10.5 }}>demo credits</div>
         </div>
         <div className="text-right">
           <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11 }}>Wins</div>
-          <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 20, fontWeight: 640 }}>{p.wins}</div>
+          <div className="t-numeral" style={{ color: C.ink, fontSize: 22 }}>{p.wins}</div>
         </div>
       </div>
 
@@ -214,8 +215,8 @@ function ReceiptFeed({ rows }: { rows: MarketReceiptRow[] }) {
                 <td className="px-4 py-2.5" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 12, whiteSpace: 'nowrap' }}>{r.amount == null ? '—' : `${fmtNum(r.amount)}`}</td>
                 <td className="px-4 py-2.5" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12, whiteSpace: 'nowrap' }}>{svcLabel(r.serviceType)}</td>
                 <td className="px-4 py-2.5" style={{ whiteSpace: 'nowrap' }}>
-                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5" style={{ background: 'rgba(10,10,11,0.04)', color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.04em' }}>
-                    <span aria-hidden>🔒</span> sealed
+                  <span className="material-frost inline-flex items-center px-2.5 py-1">
+                    <Sealed />
                   </span>
                 </td>
               </tr>
