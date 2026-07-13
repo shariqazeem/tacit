@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
 import { C, FONT } from '../../lens/components/theme';
-import { Card, CopyId, Row, SectionTitle, StatChip } from './bits';
+import { Card, CopyId, Row, SectionTitle, Sealed, StatChip } from './bits';
 import { WorkResultView } from './WorkResult';
 import { POLICY_BY_SERVICE, POLICY_META, SERVICE_META, SERVICE_ORDER, type RunnerHealth, type StoredRun, type WorkHealth, type WorkPhase, type WorkResult } from '../types';
 
@@ -213,7 +213,7 @@ function ConsoleIdle(p: any) {
   return (
     <motion.div initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11.5, letterSpacing: '0.16em', textTransform: 'uppercase' }}>Buyer agent console · Canton devnet</div>
-      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 'clamp(26px, 5vw, 40px)', fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.08 }}>Tell your procurement agent what you need.</h1>
+      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.03 }}>Tell your procurement agent what you need.</h1>
       <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>Describe the work in plain English. The agent proposes a mandate you approve — then three provider agents bid privately, the winner performs the work, findings stay private, and a deterministic policy decides. The agent never invents findings or prices.</p>
 
       <div className="mt-6 flex flex-wrap gap-2">
@@ -270,7 +270,12 @@ function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: an
   const policyLabel = POLICY_META.find((x: any) => x.id === proposal.policyId)?.label ?? proposal.policyId;
   return (
     <Card style={{ marginTop: 16, borderColor: 'rgba(124,58,237,0.28)' }}>
-      <SectionTitle kicker="proposed mandate — approve to proceed">Your agent proposes</SectionTitle>
+      <div className="flex items-center justify-between">
+        <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Proposed mandate · approve to proceed</div>
+        <Sealed label="Unsigned" />
+      </div>
+      <div className="mt-1.5" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 27, fontWeight: 500, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Your agent proposes</div>
+      <div className="mb-4 mt-3 h-px w-full" style={{ background: C.hairline }} aria-hidden />
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
         <Row label="Service">{SERVICE_META[proposal.serviceType]?.label ?? proposal.serviceType}</Row>
         <Row label="Target" mono>{proposal.input.url}</Row>
@@ -381,8 +386,24 @@ function RunningView({ elapsed, runners, url, stages, reduce, serviceType }: { e
         <div className="mt-1" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, lineHeight: 1.5 }}>{narration}</div>
       </div>
       <div className="mt-3 flex items-center gap-3"><span className={reduce ? '' : 'tacit-pulse'} style={{ display: 'inline-block', height: 8, width: 8, borderRadius: 999, background: C.violet }} /><span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 14 }}>{(elapsed / 1000).toFixed(1)}s elapsed</span></div>
-      {runners.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{runners.map((r) => (<span key={r.instanceId} className="rounded-md px-2 py-1" style={{ background: C.surface, border: `1px solid ${C.hairline}`, fontFamily: FONT.mono, fontSize: 11, color: C.ink2 }}>{r.label} · {r.partyShort}</span>))}</div>}
-      <Card style={{ marginTop: 20 }}>
+      {runners.length >= 3 && (
+        <Card style={{ marginTop: 16 }}>
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="tacit-label">Sealed bids</span>
+            <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>— each price is hidden from the other providers by the ledger, not the UI</span>
+          </div>
+          <div className="mt-2.5 flex flex-col gap-2">
+            {runners.slice(0, 3).map((r) => (
+              <div key={r.instanceId} className="material-frost flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <span style={{ fontFamily: FONT.sans, fontSize: 13, fontWeight: 500, color: C.ink }}>{r.label}</span>
+                <span className="flex-1 text-center" style={{ fontFamily: FONT.mono, fontSize: 11, color: C.ink3 }}>{r.partyShort}</span>
+                <Sealed label="Sealed bid" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      <Card style={{ marginTop: 16 }}>
         <ol className="flex flex-col gap-2.5">
           {STAGES.map((s, i) => {
             const done = !!stages[s.key];

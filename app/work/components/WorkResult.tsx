@@ -1,24 +1,40 @@
 'use client';
 
-import { C, FONT } from '../../lens/components/theme';
+import { useEffect, useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
+import { C, FONT, decisionOf } from '../../lens/components/theme';
 import { Card, CopyId, Row, SectionTitle, StatChip } from './bits';
 import { WorkLens } from './WorkLens';
-import { DECISION_META, PERSONA_META, POLICY_META, SEVERITY_TONE, type RunnerHealth, type VendorSecurityAssessmentReport, type WorkResult } from '../types';
+import { PERSONA_META, POLICY_META, SEVERITY_TONE, type RunnerHealth, type VendorSecurityAssessmentReport, type WorkResult } from '../types';
 
-const DECISION_COLOR = { good: C.live, warn: C.fallback, review: C.violet, bad: '#B91C1C' } as const;
-
-function ScoreRing({ score, band }: { score: number; band: string }) {
-  const tone = band === 'critical' ? '#B91C1C' : score >= 85 ? C.live : score >= 65 ? C.violet : C.fallback;
+/** The score as an arc that draws once on mount (instant under reduced-motion). */
+function ScoreArc({ score, band, reduce }: { score: number; band: string; reduce: boolean }) {
+  const tone = band === 'critical' || band === 'poor' ? '#B02A2A' : score >= 85 ? C.live : score >= 65 ? C.violet : C.fallback;
+  const R = 30;
+  const CIRC = 2 * Math.PI * R;
+  const pct = Math.max(0, Math.min(100, score)) / 100;
+  const [drawn, setDrawn] = useState(reduce);
+  useEffect(() => {
+    if (reduce) { setDrawn(true); return; }
+    const id = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(id);
+  }, [reduce]);
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: `conic-gradient(${tone} ${score * 3.6}deg, rgba(10,10,11,0.06) 0deg)` }}>
-        <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: C.surface }}>
-          <span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 17, fontWeight: 600 }}>{score}</span>
+      <div className="relative" style={{ width: 72, height: 72 }}>
+        <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden>
+          <circle cx="36" cy="36" r={R} fill="none" stroke="rgba(10,10,11,0.07)" strokeWidth="6" />
+          <circle cx="36" cy="36" r={R} fill="none" stroke={tone} strokeWidth="6" strokeLinecap="round"
+            strokeDasharray={CIRC} strokeDashoffset={drawn ? CIRC * (1 - pct) : CIRC}
+            transform="rotate(-90 36 36)" style={{ transition: reduce ? 'none' : 'stroke-dashoffset 0.9s var(--micro-ease)' }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="t-numeral" style={{ color: C.ink, fontSize: 23 }}>{score}</span>
         </div>
       </div>
       <div>
-        <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600, textTransform: 'capitalize' }}>{band} posture</div>
-        <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>score /100 · from observed checks</div>
+        <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600, textTransform: 'capitalize' }}>{band}</div>
+        <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>score / 100</div>
       </div>
     </div>
   );
@@ -101,6 +117,7 @@ function PerformanceSection({ r }: { r: any }) {
 }
 
 export function WorkResultView({ result, runners }: { result: WorkResult; runners: RunnerHealth[] }) {
+  const reduce = !!useReducedMotion();
   const raw = result.artifact.report;
   const rep = raw && raw.service === 'vendor_security_assessment' ? (raw as VendorSecurityAssessmentReport) : null;
   const perf = raw && raw.service === 'web_performance_probe' ? (raw as any) : null;
@@ -108,26 +125,24 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
   const art = result.artifact;
   const bv = result.buyerVerification;
   const policy = result.policy;
-  const dm = policy ? DECISION_META[policy.decision] : null;
-  const decisionColor = dm ? DECISION_COLOR[dm.tone] : C.ink3;
+  const dec = policy ? decisionOf(policy.decision) : null;
+  const decisionColor = dec ? dec.fg : C.ink3;
   const policyLabel = POLICY_META.find((p) => p.id === policy?.policyId)?.label ?? policy?.policyId;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      {/* ── 1) DECISION HERO ─────────────────────────────────────────── */}
+      {/* ── 1) DECISION HERO — the decision word in the display serif ─── */}
       <Card style={{ borderColor: `${decisionColor}44` }}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div style={{ minWidth: 0 }}>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1" style={{ background: `${decisionColor}14`, border: `1px solid ${decisionColor}33` }}>
-              <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: decisionColor }} />
-              <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, fontWeight: 600 }}>{dm?.label ?? 'Assessment delivered'}</span>
-            </div>
-            <h2 style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', wordBreak: 'break-word' }}>{rep?.hostname || perf?.target?.host || result.input.url}</h2>
+            <div className="tacit-label" style={{ color: decisionColor }}>Policy decision</div>
+            <div className="t-decision mt-1" style={{ color: decisionColor }}>{dec?.label ?? 'Delivered'}</div>
+            <h2 className="mt-3" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em', wordBreak: 'break-word' }}>{rep?.hostname || perf?.target?.host || result.input.url}</h2>
             <div style={{ color: C.ink2, fontFamily: FONT.mono, fontSize: 12.5, wordBreak: 'break-all' }}>{result.input.url}</div>
-            {policy && <div className="mt-1" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>Policy: {policyLabel} · {result.requestSource === 'mcp' ? 'via external MCP agent' : 'via browser'}</div>}
+            {policy && <div className="mt-1" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>Policy: {policyLabel} · {result.requestSource === 'mcp' ? 'via external MCP agent' : result.requestSource === 'console' ? 'via buyer agent console' : 'via browser'}</div>}
           </div>
-          {rep && <ScoreRing score={rep.score} band={rep.riskBand} />}
-          {perf && <ScoreRing score={perf.score.value} band={perf.score.band} />}
+          {rep && <ScoreArc score={rep.score} band={rep.riskBand} reduce={reduce} />}
+          {perf && <ScoreArc score={perf.score.value} band={perf.score.band} reduce={reduce} />}
         </div>
         {policy && policy.reasonCodes.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -250,8 +265,28 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
             </span>
           ))}
         </div>
-        <Row label="Provider commitment (on-ledger)" mono>{art.providerCommittedSha256.slice(0, 24)}…</Row>
-        <Row label="Buyer-computed SHA-256 (off-ledger)" mono>{art.buyerComputedSha256 ? `${art.buyerComputedSha256.slice(0, 24)}…` : 'not computed (resumed)'}</Row>
+        {art.buyerComputedSha256 && bv.hashOk ? (
+          <div className="mb-3 flex flex-col gap-2 rounded-2xl p-3.5" style={{ background: `${C.live}0a`, border: `1px solid ${C.live}3a` }}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="tacit-label" style={{ color: C.ink2 }}>Provider commitment · on-ledger</span>
+              <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.ink }}>{art.providerCommittedSha256.slice(0, 22)}…</span>
+            </div>
+            <div className="flex items-center justify-center gap-2" style={{ color: C.live }}>
+              <span aria-hidden style={{ height: 1, width: 18, background: `${C.live}55` }} />
+              <span style={{ fontFamily: FONT.mono, fontSize: 12.5, fontWeight: 600, letterSpacing: '0.08em' }}>= hashes match</span>
+              <span aria-hidden style={{ height: 1, width: 18, background: `${C.live}55` }} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="tacit-label" style={{ color: C.ink2 }}>Buyer re-hash · off-ledger</span>
+              <span style={{ fontFamily: FONT.mono, fontSize: 12, color: C.ink }}>{art.buyerComputedSha256.slice(0, 22)}…</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            <Row label="Provider commitment (on-ledger)" mono>{art.providerCommittedSha256.slice(0, 24)}…</Row>
+            <Row label="Buyer-computed SHA-256 (off-ledger)" mono>{art.buyerComputedSha256 ? `${art.buyerComputedSha256.slice(0, 24)}…` : 'not computed (resumed)'}</Row>
+          </>
+        )}
         <Row label="Byte length" mono>{art.byteLength}{art.buyerComputedByteLength != null ? ` (buyer: ${art.buyerComputedByteLength})` : ''}</Row>
         <Row label="Settlement"><CopyId id={ev.settlementContractId} /></Row>
         {ev.paymentIouContractId && <Row label="Payment IOU"><CopyId id={ev.paymentIouContractId} /></Row>}
