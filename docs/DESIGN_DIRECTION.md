@@ -62,5 +62,13 @@ fallback (`@supports not (backdrop-filter)`). Visible **violet focus ring** on
 aria-live regions preserved. No horizontal overflow at 375px; no layout shift on /market
 refresh.
 
+## Shipped deviations (kept honest per the note below)
+- **OG image serif**: `public/og.png` is rasterized at build with `sharp`, whose SVG
+  renderer only has system fonts — so the OG headline uses a system serif (Georgia/Times),
+  not Fraunces. In-app text uses real Fraunces via `next/font`; only the static social
+  card differs, and the two are visually close. Accepted to keep the OG a committed static
+  asset (no build-time font embedding pipeline).
+- **Landing sections** are unchanged this pass (nav + tokens inherited only), per scope.
+
 > Implementation note: if a surface forces a deviation from this document, the document is
 > updated in the same commit so it always describes what shipped.
