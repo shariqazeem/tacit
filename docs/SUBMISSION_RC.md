@@ -1,5 +1,22 @@
 # Tacit — submission release candidate
 
+## Planner hardening — the Agent console can't flake mid-demo (2026-07-15)
+
+The Buyer-Agent planner (the demo centerpiece) now self-corrects. `shared/agentPlanner.ts`
+(pure, unit-tested, no mock server) runs one fresh model attempt, and if the **hard gate**
+(`validateAgentPlan`) rejects it, one **structured-repair** attempt that feeds the model its
+own output plus the exact rejection reason and demands corrected strict JSON. Only after a
+model's fresh+repair both fail does it try an **optional fallback model**
+(`TACIT_LLM_FALLBACK_MODEL`; absent = current behavior). The prompt gained **five few-shot
+examples** (goal → exact JSON) spanning both services and both policy families. Honesty is
+unchanged: every proposal from every model passes the same hard gate; exhausting all attempts
+returns `{ok:false, reason}` — **never a fabricated proposal**. Evidence: `npm run test:planner`
+(5), `npm run planner:smoke` (6 live calls: 3 landing chips + 3 fresh paraphrases → hard-gate-
+valid with the expected service + policy family), and `npm run demo:prime` (one real job per
+service + health + feed + smoke + cert days — the button to press before recording).
+
+---
+
 ## Landing + first-run onboarding — 10 seconds to understand, under a minute to a real result (2026-07-15)
 
 The landing was rewritten inside the existing design system (no new tokens, fonts, or
