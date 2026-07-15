@@ -81,22 +81,33 @@ export async function planWithRepairAndFallback(
 ): Promise<{ ok: true; proposal: any; attempts: PlanAttempt[] } | { ok: false; reason: string; attempts: PlanAttempt[] }> {
   const attempts: PlanAttempt[] = [];
   let lastReason = 'the planner could not produce a usable proposal';
-  let lastText: string | null = null;
 
   for (const cfg of models) {
-    for (const phase of ['fresh', 'repair'] as const) {
-      const user = phase === 'fresh' ? `Goal: ${goalText}` : buildRepairUser(goalText, lastText ?? '(no output)', lastReason);
-      const text = await callModel(cfg, system, user);
-      lastText = text;
-      const obj = extractJson(text);
-      const v = obj ? validate(obj) : null;
-      if (v && v.ok) {
-        attempts.push({ model: cfg.label, phase, ok: true });
-        return { ok: true, proposal: v.proposal, attempts };
+    // Fresh attempt.
+    const freshText = await callModel(cfg, system, `Goal: ${goalText}`);
+    const freshObj = extractJson(freshText);
+    const fv = freshObj ? validate(freshObj) : null;
+    if (fv && fv.ok) {
+      attempts.push({ model: cfg.label, phase: 'fresh', ok: true });
+      return { ok: true, proposal: fv.proposal, attempts };
+    }
+    const freshReason = fv ? (fv as { ok: false; reason: string }).reason : (freshText === null ? 'the model did not respond in time' : 'no parseable JSON object in the model output');
+    attempts.push({ model: cfg.label, phase: 'fresh', ok: false, reason: freshReason });
+    lastReason = freshReason;
+
+    // Repair ONLY when the model actually responded (its output was wrong, not absent).
+    // A timeout won't be cured by asking the same slow model again — skip to the next.
+    if (freshText !== null) {
+      const repairText = await callModel(cfg, system, buildRepairUser(goalText, freshText, freshReason));
+      const repairObj = extractJson(repairText);
+      const rv = repairObj ? validate(repairObj) : null;
+      if (rv && rv.ok) {
+        attempts.push({ model: cfg.label, phase: 'repair', ok: true });
+        return { ok: true, proposal: rv.proposal, attempts };
       }
-      const reason = v ? (v as { ok: false; reason: string }).reason : (phase === 'repair' ? 'repair produced no parseable JSON object' : 'no parseable JSON object in the model output');
-      attempts.push({ model: cfg.label, phase, ok: false, reason });
-      lastReason = reason;
+      const repairReason = rv ? (rv as { ok: false; reason: string }).reason : 'repair produced no parseable JSON object';
+      attempts.push({ model: cfg.label, phase: 'repair', ok: false, reason: repairReason });
+      lastReason = repairReason;
     }
   }
 

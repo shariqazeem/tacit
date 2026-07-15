@@ -18,7 +18,9 @@ export function agentLlmAvailable(): boolean {
   return MODELS.length > 0 && MODELS[0].key.length > 0;
 }
 
-const TIMEOUT_MS = 15_000;
+// Generous ceiling: the OpenAI-compatible gateway can be slow under load (observed
+// ~40s for a correct proposal). A short timeout was aborting slow-but-correct calls.
+const TIMEOUT_MS = 45_000;
 
 /** One real chat/completions call to a specific model. Returns text, or null on any
  *  failure (never throws). This is the ONLY network primitive here. */

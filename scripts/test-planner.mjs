@@ -93,8 +93,24 @@ console.log('\nplanWithRepairAndFallback (orchestration):');
     assert.ok(r.ok === true, 'fallback model recovered a valid proposal');
     assert.deepEqual(r.attempts.map((a) => a.model), ['primary', 'primary', 'fallback:fb'], 'primary twice, then fallback');
   }
-  ok('fresh / repair / gate-repair / fallback-absent-failure / fallback-recovery all correct');
-  ok('honesty: exhausted models → {ok:false}, never a fabricated proposal');
+  // 6) TIMEOUT-SKIP: a null (timeout) fresh does NOT trigger a wasted repair on the same model
+  {
+    let calls = 0;
+    const r = await planWithRepairAndFallback('vet acme.com', 'SYS', [M('primary')], async () => { calls++; return null; }, gate);
+    assert.equal(r.ok, false, 'timeout → honest failure');
+    assert.equal(calls, 1, 'no repair after a timeout (re-asking a slow model is pointless)');
+    assert.deepEqual(r.attempts.map((a) => `${a.phase}:${a.ok}`), ['fresh:false'], 'only the fresh attempt, no repair');
+  }
+  // 7) TIMEOUT on primary → straight to fallback (skipping primary repair)
+  {
+    const seq = [null, VALID]; // primary fresh timeout, fallback fresh valid
+    let i = 0;
+    const r = await planWithRepairAndFallback('vet acme.com', 'SYS', [M('primary'), M('fallback:fb')], async () => seq[i++], gate);
+    assert.ok(r.ok === true, 'fallback recovered after a primary timeout');
+    assert.deepEqual(r.attempts.map((a) => a.model), ['primary', 'fallback:fb'], 'primary timeout → straight to fallback (no primary repair)');
+  }
+  ok('fresh / repair / gate-repair / fallback-absent-failure / fallback-recovery correct');
+  ok('timeout skips the wasted same-model repair; honesty: exhausted → {ok:false}, never fabricated');
 }
 
 console.log(`\n✅ all ${pass} planner tests passed`);
