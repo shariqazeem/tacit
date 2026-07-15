@@ -342,7 +342,8 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
           className="rounded-full px-6 py-3" style={{ background: agentStep === 'planning' || goalText.trim().length < 4 ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: agentStep === 'planning' ? 'wait' : 'pointer' }}>
           {agentStep === 'planning' ? 'Planning…' : 'Plan the mandate →'}
         </button>
-        {!ready && <span style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>Provider network not ready — you can still plan, but approval waits for 3 agents.</span>}
+        {agentStep === 'planning' && <span aria-live="polite" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12.5 }}>Reading your goal and drafting a mandate — this can take up to a minute on a busy model.</span>}
+        {agentStep !== 'planning' && !ready && <span style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>Provider network not ready — you can still plan, but approval waits for 3 agents.</span>}
       </div>
       {planError && <div className="mt-3 rounded-lg px-3 py-2" style={{ background: 'rgba(180,83,9,0.07)', border: '1px solid rgba(180,83,9,0.25)', color: C.ink, fontFamily: FONT.sans, fontSize: 12.5 }}>{planError}</div>}
     </Card>

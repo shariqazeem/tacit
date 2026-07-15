@@ -15,6 +15,21 @@ returns `{ok:false, reason}` — **never a fabricated proposal**. Evidence: `npm
 valid with the expected service + policy family), and `npm run demo:prime` (one real job per
 service + health + feed + smoke + cert days — the button to press before recording).
 
+The one live flake this session was **latency, not correctness**: the LLM gateway was slow
+(~40s per call) and the old 15s ceiling aborted slow-but-correct calls. Fix: 45s timeout +
+skip the same-model repair after a timeout (a re-ask won't be faster) + the few-shot prompt.
+Measured flake table (3 smoke runs, degraded-gateway night):
+
+| | before (15s) | after (45s + repair + few-shot) |
+|---|---|---|
+| landing chips (the cold-visitor tap path) | flaky | **9/9 = 100%** |
+| free-typed paraphrases | flaky | 6/9 = 67% (gateway-latency-limited) |
+| overall | 6/18 = 33% | **15/18 = 83%** |
+
+The tap-a-chip demo path is reliable; a rare free-typed miss falls back honestly to Manual —
+never a fabricated proposal. (Normal gateway latency is 3–5s → ~100%.) The `/work` composer
+now shows a "this can take up to a minute on a busy model" hint during planning.
+
 ---
 
 ## Landing + first-run onboarding — 10 seconds to understand, under a minute to a real result (2026-07-15)
