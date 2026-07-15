@@ -9,8 +9,75 @@ import { WorkResultView } from './WorkResult';
 import { POLICY_BY_SERVICE, POLICY_META, SERVICE_META, SERVICE_ORDER, type RunnerHealth, type StoredRun, type WorkHealth, type WorkPhase, type WorkResult } from '../types';
 
 const STORE_KEY = 'tacit.work.lastRun';
+const ONBOARD_KEY = 'tacit.work.onboarded';
 const PROCURE_TIMEOUT_MS = 150_000;
 const DEFAULT_SVC = 'vendor_security_assessment';
+
+// Zero-typing example goals — span both services and both policy families. Tapping
+// one fills the composer; the user reviews and submits. The LLM infers the service
+// and policy from the plain-English wording.
+const EXAMPLE_GOALS: { label: string; goal: string }[] = [
+  { label: 'Onboard a vendor · strict infra', goal: "We're onboarding acme-corp.com as a vendor — strict about infrastructure, budget 60." },
+  { label: 'Is it fast enough? · standard SLO', goal: 'Is example.com fast enough for launch? Standard SLO, budget 40.' },
+  { label: 'Quick security pre-screen', goal: 'Quick security pre-screen of example.com before we integrate, budget 50.' },
+];
+
+// First-run three-step explainer, dismissible + remembered in localStorage.
+function FirstRunStrip() {
+  const [show, setShow] = useState(false);
+  useEffect(() => { try { setShow(localStorage.getItem(ONBOARD_KEY) !== '1'); } catch { setShow(true); } }, []);
+  if (!show) return null;
+  const dismiss = () => { try { localStorage.setItem(ONBOARD_KEY, '1'); } catch { /* ignore */ } setShow(false); };
+  const steps = [
+    { n: '1', t: 'The agent proposes', d: 'a mandate — service, target, policy, budget' },
+    { n: '2', t: 'You approve it', d: 'nothing is spent until you do' },
+    { n: '3', t: 'Real work runs on Canton', d: 'sealed bids, private delivery, verified' },
+  ];
+  return (
+    <div className="material-clear mt-5 p-3.5" style={{ background: C.violetSoft, borderColor: 'rgba(124,58,237,0.2)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-4" style={{ flex: 1 }}>
+          {steps.map((s) => (
+            <div key={s.n} className="flex items-start gap-2">
+              <span className="tacit-num inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.violet, fontSize: 11 }}>{s.n}</span>
+              <div>
+                <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 12.5, fontWeight: 600 }}>{s.t}</div>
+                <div style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.4 }}>{s.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={dismiss} aria-label="Dismiss the getting-started guide" className="shrink-0 rounded-md px-1.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 16, lineHeight: 1, cursor: 'pointer' }}>×</button>
+      </div>
+    </div>
+  );
+}
+
+// "What just happened" recap on the success view — closes the loop back to the economy.
+function SuccessRecap() {
+  const lines = [
+    'Three provider agents bid in sealed secrecy; the ledger hid every price from the others.',
+    'You awarded and paid the winner in one atomic Canton transaction; the report was delivered privately.',
+    'You re-hashed the bytes and recomputed the score to verify it; an auditor got a receipt — never the report.',
+  ];
+  return (
+    <div className="material-clear mt-8 p-5">
+      <div className="tacit-label" style={{ marginBottom: 8 }}>What just happened</div>
+      <ol className="flex flex-col gap-2">
+        {lines.map((l, i) => (
+          <li key={i} className="flex items-start gap-2.5">
+            <span className="tacit-num" style={{ color: C.violet, fontSize: 12, marginTop: 1 }}>{i + 1}</span>
+            <span style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13.5, lineHeight: 1.5 }}>{l}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <Link href="/market" className="no-underline" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 600 }}>Your job is now in the public feed — body sealed →</Link>
+        <Link href="/lens" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>See it from each party →</Link>
+      </div>
+    </div>
+  );
+}
 
 const newJobId = () => `vjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -192,9 +259,9 @@ export function WorkExperience() {
           {restored && <RestoredBanner />}
           {brief && <AgentBrief brief={brief} />}
           <WorkResultView result={result} runners={runnersAtRun.current.length ? runnersAtRun.current : health?.runners || []} />
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <SuccessRecap />
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
             <NewButton onClick={startNew} label="New assessment" />
-            <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>See this settle in the live market →</Link>
           </div>
         </div>
       )}
@@ -221,6 +288,8 @@ function ConsoleIdle(p: any) {
         <StatChip label={`${online}/3 capable agents`} tone={online >= 3 ? 'live' : 'warn'} />
         <StatChip label={`${SERVICE_META[serviceType]?.label ?? serviceType}`} tone={ready ? 'live' : 'neutral'} />
       </div>
+
+      <FirstRunStrip />
 
       {/* tabs */}
       <div className="mt-6 inline-flex rounded-full p-1" role="tablist" aria-label="Console mode" style={{ background: 'rgba(10,10,11,0.04)', border: `1px solid ${C.hairline}` }}>
@@ -254,6 +323,20 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
         placeholder="We're onboarding acme.com as a vendor next week — vet them, budget 100, we're strict about infrastructure."
         className="mt-1.5 w-full resize-none rounded-xl px-3.5 py-2.5" style={{ background: C.bg, border: `1px solid ${C.hairline}`, color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.5, outlineColor: C.violet }} />
       <div id="goal-hint" className="mt-1.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>The agent turns this into a mandate you approve. Nothing is spent until you approve.</div>
+      {agentStep !== 'planning' && (
+        <div className="mt-3">
+          <div className="tacit-label" style={{ marginBottom: 6 }}>Or tap an example</div>
+          <div className="flex flex-wrap gap-2">
+            {EXAMPLE_GOALS.map((g) => (
+              <button key={g.label} type="button" onClick={() => setGoalText(g.goal)}
+                className="rounded-full px-3 py-1.5" style={{ background: C.violetSoft, border: `1px solid ${C.hairline}`, color: C.ink2, fontFamily: FONT.sans, fontSize: 12.5, cursor: 'pointer' }}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>Any public HTTPS endpoint works — <span style={{ fontFamily: FONT.mono }}>example.com</span> is fine. Budget is in demo credits; the default is plenty.</div>
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button type="button" onClick={onPlan} disabled={agentStep === 'planning' || goalText.trim().length < 4}
           className="rounded-full px-6 py-3" style={{ background: agentStep === 'planning' || goalText.trim().length < 4 ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: agentStep === 'planning' ? 'wait' : 'pointer' }}>
@@ -304,13 +387,16 @@ function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: an
   );
 }
 
-function ManualPane({ health, url, setUrl, budget, setBudget, serviceType, chooseService, policyId, setPolicyId, onRunManual, ready }: any) {
+function ManualPane({ health, setMode, url, setUrl, budget, setBudget, serviceType, chooseService, policyId, setPolicyId, onRunManual, ready }: any) {
   const httpsOk = /^https:\/\//i.test(url.trim());
   const canRun = ready && httpsOk && budget > 0;
   const meta = SERVICE_META[serviceType] || SERVICE_META[DEFAULT_SVC];
   const policies = POLICY_BY_SERVICE[serviceType] || [];
   return (
     <Card style={{ marginTop: 16 }}>
+      <div className="mb-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>
+        Prefer plain English? The <button type="button" onClick={() => setMode('agent')} style={{ color: C.violet, fontFamily: FONT.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Agent tab</button> writes this mandate for you.
+      </div>
       <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Service</span>
       <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="Service">
         {SERVICE_ORDER.map((sid: string) => {

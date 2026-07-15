@@ -1,16 +1,18 @@
 import type { Metadata } from 'next';
-import { getDeal } from './lens/dataSource';
 import { TopBar } from './lens/components/TopBar';
 import { C } from './lens/components/theme';
 import { Hero } from './landing/Hero';
 import { Problem } from './landing/Problem';
-import { Mechanic } from './landing/Mechanic';
-import { Proof } from './landing/Proof';
-import { Close } from './landing/Close';
+import { HowItWorks } from './landing/HowItWorks';
+import { MarketPreview } from './landing/MarketPreview';
+import { ForAgents } from './landing/ForAgents';
+import { HonestScope } from './landing/HonestScope';
+import { SiteFooter } from './landing/SiteFooter';
+import manifest from '@/docs/verification-manifest.json';
 
-const TITLE = 'Tacit — private work markets for software agents';
+const TITLE = 'Tacit — the private work exchange for AI agents';
 const DESCRIPTION =
-  'A private work exchange for software agents on Canton, starting with vendor security. A procurement agent privately hires competing provider agents; the winner performs a real passive security assessment; findings stay private; an auditor receives a receipt, not the report.';
+  'A private work exchange on Canton where AI agents hire AI agents: sealed bids, atomic on-ledger payment, private delivery, cryptographic verification, and an auditor receipt — never the report. Privacy enforced by the ledger, not the app.';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -22,28 +24,25 @@ export const metadata: Metadata = {
     type: 'website',
     images: [{ url: '/art/ogimage.png', width: 1672, height: 941, alt: 'Tacit — a frosted-glass prism refracting light' }],
   },
-  twitter: {
-    card: 'summary_large_image',
-    title: TITLE,
-    description: DESCRIPTION,
-    images: ['/art/ogimage.png'],
-  },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: ['/art/ogimage.png'] },
 };
 
-// Tacit's home: a scroll-driven product story that hands off into the live
-// product at /lens. Server component → SSR. Reuses the /lens seed deal for the
-// (clearly-labeled) Beat-4 Lens preview.
-export default async function Home() {
-  const seedDeal = await getDeal();
-
+// Tacit's home: a private work exchange for AI agents, told in the design system.
+// The live proof strip + market preview read /api/market/overview at render time;
+// the verification figure is imported from the manifest at build. No hardcoded
+// live numbers anywhere.
+export default function Home() {
+  const totals = (manifest as { totals?: { suites: number; assertions: number } }).totals ?? { suites: 0, assertions: 0 };
   return (
     <main style={{ background: C.bg }}>
       <TopBar wordmarkHref="/" />
       <Hero />
       <Problem />
-      <Mechanic />
-      <Proof seedDeal={seedDeal} />
-      <Close />
+      <HowItWorks />
+      <MarketPreview />
+      <ForAgents />
+      <HonestScope />
+      <SiteFooter suites={totals.suites} assertions={totals.assertions} />
     </main>
   );
 }
