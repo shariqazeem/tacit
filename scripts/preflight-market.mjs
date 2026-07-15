@@ -97,19 +97,6 @@ must(m.totals.completedJobs === 0 || near(recentSum, 1, 0.03), `recentWinShares 
 const distinctRecent = m.providers.filter((p) => p.recentWins > 0).length;
 must(distinctRecent >= 2, `≥2 distinct winners within the last 15 receipts (${distinctRecent}) — real competition`);
 
-// ── 2c) un-killable default flow: a default-budget job always gathers 3 bids ──
-console.log('\nUn-killable default flow (default budget = 100):');
-const jobId = 'mkt-' + crypto.createHash('sha256').update(APP_URL + String(Date.now())).digest('hex').slice(0, 12);
-let pj = null;
-try {
-  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180000);
-  const pr = await fetch(APP_URL + '/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId, serviceType: 'vendor_security_assessment', input: { url: 'https://example.com' }, maxBudget: 100, policyId: 'standard-saas-v1', buyerName: 'Judge-Agent' }), signal: ctrl.signal });
-  clearTimeout(timer); pj = await pr.json().catch(() => null);
-  must(pr.status === 200 && pj?.ok === true, `default-budget procurement completed (HTTP ${pr.status})`);
-} catch (e) { bad(`default-budget procurement failed: ${String(e?.message || e)}`); }
-must(Array.isArray(pj?.bids) && pj.bids.length === 3, `default-budget job gathered 3 bids (${pj?.bids?.length ?? 0}) — no timeout`);
-must(!pj?.bids || pj.bids.every((b) => b.price <= 100), 'all 3 bids fell within the default budget');
-
 // ── 3) independent recompute of per-provider treasury (raw auditor queries) ──
 console.log('\nIndependent recompute (raw auditor Canton queries):');
 let auditorSettles = [], auditorReceipts = [];
@@ -176,6 +163,21 @@ console.log('  … waiting 16s for the cache to expire …');
 await new Promise((r) => setTimeout(r, 16000));
 const c = (await jget(APP_URL + '/api/market/overview')).json;
 must(c?.asOfUtc && c.asOfUtc !== a.asOfUtc, 'a later GET advances asOfUtc (recomputed live)');
+
+// ── 7) un-killable default flow — LAST, so its new receipt can't perturb the
+//        snapshot the recompute above verified. A default-budget job must gather 3
+//        in-budget bids (the demo guarantee the pricing fix restores). ─────────
+console.log('\nUn-killable default flow (default budget = 100):');
+const jobId = 'mkt-' + crypto.createHash('sha256').update(APP_URL + String(Date.now())).digest('hex').slice(0, 12);
+let pj = null;
+try {
+  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180000);
+  const pr = await fetch(APP_URL + '/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId, serviceType: 'vendor_security_assessment', input: { url: 'https://example.com' }, maxBudget: 100, policyId: 'standard-saas-v1', buyerName: 'Judge-Agent' }), signal: ctrl.signal });
+  clearTimeout(timer); pj = await pr.json().catch(() => null);
+  must(pr.status === 200 && pj?.ok === true, `default-budget procurement completed (HTTP ${pr.status})`);
+} catch (e) { bad(`default-budget procurement failed: ${String(e?.message || e)}`); }
+must(Array.isArray(pj?.bids) && pj.bids.length === 3, `default-budget job gathered 3 bids (${pj?.bids?.length ?? 0}) — no timeout`);
+must(!pj?.bids || pj.bids.every((b) => b.price <= 100), 'all 3 bids fell within the default budget');
 
 console.log('\n=== MARKET EVIDENCE ===');
 console.log(JSON.stringify({

@@ -33,20 +33,28 @@ committed, content stayed private.
   the auditor cannot see Ious, so this read is done as each provider; A and B sit at `0`).
   The market's displayed volume sums **only auditor-observed** settlements, so the old
   negotiate-demo deals (no auditor observer) correctly never appear.
-- **Win distribution (honest, not engineered):** Provider C has won every completed
-  job. We inspected why before touching anything. The three runners already bid as
-  **distinct parties with genuinely different private cost structures** (base/margin
-  `22 / 0.4`, `30 / 0.5`, `15 / 0.3`) — i.e. pricing was **already distinct, not the
-  identical/degenerate case** the spec's optional pricing change targets, so we left it
-  **unchanged**. C dominates for two honest reasons: (1) it is the genuine low-cost
-  bidder, and (2) a **rich-get-richer load dynamic** in the runner's private pricing —
-  `load = 1 + (bids − deliveries)·0.05` — means a runner that keeps losing accumulates
-  its un-cleared losing bids as phantom in-flight load and prices itself *further* out,
-  while the winner stays un-loaded and cheap. Flattening this would require changing the
-  **runner loop, which this pass leaves untouched** (work path is read-only here). We do
-  **not** randomize, script, or reinterpret history — the market shows the real outcome:
-  an incumbent low-cost agent. (Sealed bids themselves stay private; the market never
-  shows a bid, only the settled amount.)
+- **Real competition (pricing bookkeeping fixed):** an earlier phantom-load bug in the
+  runner's private pricing inflated a chronic loser's bid without bound (measured live:
+  B quoting `98`, A `74` vs C `27` on comparable requests) — `load` counted *every bid
+  ever placed*, so lost bids never cleared. Fixed: in-flight is now recomputed **live from
+  the ledger each tick** — won-but-undelivered assignments + own bids on still-open
+  requests — so a **lost bid clears immediately** (its `ActiveWorkRequest` is consumed on
+  award and yields no `Assignment`). On redeploy A/B collapsed to base pricing at once
+  (B `98 → ~35`), **no state migration, bid-idempotency untouched**. The three runners are
+  now **configured specialists** via `RUNNER_SERVICE_COST_JSON` (private, never leaked):
+  **A = security** (vendor 18 / perf 26), **C = performance** (vendor 24 / perf 18),
+  **B = generalist** (20 / 22), margin 0.2. At zero load every quote for both services
+  sits ≤ 50% of the default budget (100), so the default flow always gathers 3 in-budget
+  bids; spreads are modest enough that one concurrent same-service job can flip a winner
+  via live load. Prices are a **pure function** of (per-service cost, request complexity,
+  real workload) — no randomness, history never rewritten. `/market` now shows per-service
+  win chips + a "recent form (last 15)" bar; the sealed bids themselves stay private.
+  **Live proof (8 real HTTPS jobs, mixed services, 2 at the default budget, 2 concurrent
+  pairs):** vendor jobs → **Provider A** (security specialist), perf jobs → **Provider C**
+  (performance specialist) → **2 distinct winners**; both default-budget jobs gathered 3
+  in-budget bids; concurrency lifted the winner's quote 31.77 → 35.06 (live load repricing).
+  The market now shows A = 5 vendor wins (recent form rising) vs incumbent C — real
+  competition, not a single dominant agent.
 - **MCP 0.6.0:** `tacit_market_overview {}` gives an agent the same auditor view — check
   a provider's track record before hiring, without seeing anything private.
 - **Live:** https://tacit.80-225-209-190.sslip.io/market. `demo:check` asserts it healthy.
