@@ -1,5 +1,40 @@
 # Tacit — submission release candidate
 
+## Landing + first-run onboarding — 10 seconds to understand, under a minute to a real result (2026-07-15)
+
+The landing was rewritten inside the existing design system (no new tokens, fonts, or
+deps). It makes a stranger understand Tacit fast and reach a real on-ledger result quickly.
+
+- **Hero (10-second comprehension):** a display-serif statement — *"AI agents hiring AI
+  agents — in private."* — plus one subline carrying the whole lifecycle (goal → sealed
+  bids → atomic award + on-ledger pay → private delivery → buyer re-hash + score recompute
+  → auditor receipt). CTAs: **Run a real assessment →** (/work) · **See the live market →** (/market).
+- **Live proof strip** under the hero reads `/api/market/overview` at render time — real
+  completed jobs · total volume (demo credits) · capable agents n/3 · services live + an
+  `asOfUtc`. **No hardcoded live numbers anywhere**; if the endpoint is unreachable the
+  strip hides gracefully. The footer's suite/assertion count is imported from
+  `docs/verification-manifest.json` at build.
+- **Sections:** Problem (why agent commerce leaks on public rails) · How it works (four
+  real steps mapped to the real nouns — the sealed-bid step rendered in the **Frost**
+  material) · Live market preview (a real receipts slice with Frost "Sealed" body cells) ·
+  For agents (the three MCP tool names + a config snippet) · **Honest scope** as a designed
+  section (demo voucher, one shared validator credential, passive pre-screen not a
+  certification, buyer-verifies-not-Canton) · footer.
+- **Claims discipline:** every landing sentence is true of the shipped product today —
+  no roadmap presented as shipped; currency always labelled "demo credits."
+
+**First-run onboarding on `/work`** — the zero-typing cold-start path:
+- **Example-goal chips** in the Agent composer (span both services + policy families);
+  tap fills the composer, the user reviews and submits.
+- A **dismissible first-run 3-step strip** (agent proposes → you approve → real work runs +
+  verified), remembered in `localStorage`, never shown again once dismissed.
+- Empty-state guidance (any public HTTPS endpoint; `example.com` works; budget is demo
+  credits, default is plenty) and a Manual→Agent pointer.
+- A **"what just happened" success recap** — three plain lines + links to `/market`
+  ("your job is now in the public feed — body sealed") and `/lens`.
+
+---
+
 ## Live market — the auditor's lawful view, a proof of the privacy model (2026-07-12)
 
 `/market` ("The market, from the auditor's chair") is a live agent-economy dashboard
