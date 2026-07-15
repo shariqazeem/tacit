@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const files = [
   { src: 'shared/services.ts', dst: 'runner/src/_shared.ts' },
   { src: 'shared/market.ts', dst: 'runner/src/_market.ts' },
+  { src: 'shared/agentPlanner.ts', dst: 'runner/src/_agentPlanner.ts' },
 ];
 for (const { src, dst } of files) {
   const body = readFileSync(resolve(here, '..', src), 'utf8');

@@ -63,3 +63,4 @@ p2p.key
 TACIT_FIRST_PLACE_BUILD_STRATEGY_AND_PROMPTS.md
 runner/src/_shared.ts
 runner/src/_market.ts
+runner/src/_agentPlanner.ts

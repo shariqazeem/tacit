@@ -25,6 +25,7 @@
     { "name": "web performance probe (fixtures + live example.com + SSRF)", "command": "cd runner && node dist/probeTest.js", "assertions": 9, "result": "pass" },
     { "name": "runner pricing model (live in-flight, lost-bid clears, per-service cost, load flip, JSON parse)", "command": "cd runner && node dist/pricingTest.js", "assertions": 19, "result": "pass" },
     { "name": "market aggregation (fixtures: normal / empty / degradation / winShare / cap / winsByService / recentWinShare / no-forbidden-fields)", "command": "npm run test:market", "assertions": 13, "result": "pass" },
+    { "name": "planner decision logic (extractJson / repair prompt / fallback selection / repair-recovery / fallback-recovery / honest-failure — no mock server)", "command": "npm run test:planner", "assertions": 5, "result": "pass" },
     { "name": "registry + policy + agent-plan validator (both services)", "command": "npm run test:services", "assertions": 28, "result": "pass" },
     { "name": "work unit", "command": "npm run test:work", "assertions": 18, "result": "pass" },
     { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 34, "result": "pass", "mode": "devnet", "fallback": false },
@@ -33,7 +34,7 @@
     { "name": "LIVE auditor-view market (recompute + scoped Iou + recent-form/winsByService + ≥2 distinct recent winners + un-killable default-budget 3-bid)", "command": "npm run preflight:market", "assertions": 26, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE original privacy (devnet)", "command": "npm run preflight:e2e -- --require-ledger", "assertions": 11, "result": "pass", "mode": "devnet", "fallback": false }
   ],
-  "totals": { "suites": 12, "assertions": 223 },
+  "totals": { "suites": 13, "assertions": 228 },
   "liveOrigin": "https://tacit.80-225-209-190.sslip.io",
   "verifiedThroughHttps": true
 }
