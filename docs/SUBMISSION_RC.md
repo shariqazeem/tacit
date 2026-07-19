@@ -1,5 +1,38 @@
 # Tacit — submission release candidate
 
+## Endgame recovery pass — Pass 7 shipped, honest-throttle UX, activation runbook (2026-07-19)
+
+Pass 7 (the on-ledger spending mandates, below) is now **committed + pushed** on `main`
+(`292f534`..`8e7dc2b`, five logical commits: daml package / app surfaces / mcp / scripts / docs).
+
+**Recovery probe.** One probe procurement through the live HTTPS API confirmed the shared
+devnet validator is **still rate-limiting writes** from our credential — HTTP 403
+`"A security-sensitive error has been received"` (gRPC code 7). We did **not** poll further.
+Mandate activation therefore stays deferred; the exact ≤14-write, ~15-minute activation
+sequence is captured in [`docs/ACTIVATION_RUNBOOK.md`](ACTIVATION_RUNBOOK.md) to run the moment
+writes recover.
+
+**Honest-throttle UX (ships regardless of recovery).** A judge who hits the outage now sees
+engineering maturity, not a broken app:
+- `shared/ledgerErrors.ts` `classifyLedgerError()` — pure + unit-tested (`npm run test:ledger-errors`,
+  6 checks) — maps the write-throttle class (403 security-sensitive / PERMISSION_DENIED / gRPC 7
+  / RESOURCE_EXHAUSTED / 429) **distinctly** from an unreachable ledger and from genuine command
+  failures.
+- `/api/work/procure` returns a distinct **HTTP 503** with `reason: "LEDGER_WRITE_THROTTLED"` and
+  `retryable: true` (was a generic 502). Nothing is started or spent.
+- `/work` renders a **designed Clear-material state** (not a red error): *"Canton devnet is
+  rate-limiting writes right now"* — reads (market, lens) stay live, the job wasn't started,
+  nothing was spent, and **Try again** safely reuses the same jobId. Reactive-only — **no
+  write-canary** (canaries cost writes). Verified locally against a mock throttled ledger
+  (reads 200, submit 403); screenshot captured at 1440.
+- MCP: all three procure tools map the throttle to a clean `isError` with the honest,
+  non-fabricating message.
+
+Frozen packages byte-identical (`git diff daml/ daml3/ tacit-work/` = 0). Full unit suite green
+(16 suites / 260 assertions). No fallback, no simulation.
+
+---
+
 ## On-ledger spending mandates — a human budget the ledger itself enforces (2026-07-19)
 
 A human principal grants the buyer agent a **private budget envelope** as a Daml contract; every

@@ -17,7 +17,15 @@
     "safetyStory": "each procurement authorizes its spend against a private on-ledger budget envelope; an over-budget/expired/out-of-scope spend is a REAL on-ledger command failure (assertMsg in the Authorize choice), never simulated; a pre-check refuses over-budget jobs BEFORE any ledger write (HTTP 402 MANDATE_INSUFFICIENT, zero writes)",
     "sequencingDisclosure": "authorization and award are SEPARATE sequential Canton transactions — NOT atomic; the invariant proven is only that the award never precedes authorization (Authorize is exercised immediately before Rfs.Award, and its failure aborts before any IOU is created)",
     "privacyStory": "a SpendMandate is signed by the principal and observed by the agent ONLY; the auditor is NOT a stakeholder (confidential by design) — testAuditorExcluded proves the auditor's query returns []",
-    "ledgerHalfStatus": "ABORTED for this submission — the hosted devnet was refusing WRITES (HTTP 403 PERMISSION_DENIED) from this credential; per the risk posture the DAR was NOT uploaded and no party was allocated, the flag stays OFF, and the running product is untouched. The package + full test matrix are proven locally; the live preflight runs on devnet write-recovery."
+    "ledgerHalfStatus": "ABORTED for this submission — the hosted devnet was refusing WRITES (HTTP 403 PERMISSION_DENIED) from this credential; per the risk posture the DAR was NOT uploaded and no party was allocated, the flag stays OFF, and the running product is untouched. The package + full test matrix are proven locally; the live preflight runs on devnet write-recovery.",
+    "writeRecoveryProbe": "2026-07-19: one probe procurement through the live HTTPS API still returned the write-throttle (HTTP 403 'A security-sensitive error has been received', gRPC code 7). Still throttled; not polled further. Activation is captured in docs/ACTIVATION_RUNBOOK.md (a ~15-min, <=14-write sequence to run when writes recover)."
+  },
+  "honestThrottleUX": {
+    "shipsRegardlessOfRecovery": true,
+    "detection": "shared/ledgerErrors.ts classifyLedgerError() — pure + unit-tested; maps the devnet write-throttle class (403 security-sensitive / PERMISSION_DENIED / gRPC 7 / RESOURCE_EXHAUSTED / 429) distinctly from an unreachable ledger and from genuine command failures",
+    "route": "/api/work/procure returns a distinct 503 with reason LEDGER_WRITE_THROTTLED + retryable:true (was a generic 502); nothing is started or spent",
+    "ui": "/work renders a DESIGNED Clear-material state (not a red error): 'Canton devnet is rate-limiting writes right now' — reads stay live, the job wasn't started, nothing spent, Try-again reuses the same jobId. Reactive-only (no write-canary). Verified locally against a mock throttled ledger (reads 200, submit 403) — screenshot captured at 1440.",
+    "mcp": "all three procure tools map the reason to a clean isError with the honest, non-fabricating message"
   },
   "damlChangesForSecondService": 0,
   "newRuntimeDependenciesForSecondService": 0,
@@ -42,6 +50,7 @@
     { "name": "work unit", "command": "npm run test:work", "assertions": 18, "result": "pass" },
     { "name": "tacit-mandate on-ledger test matrix (authorize-decrements / over-limit-fails / service-scope / expiry / topup-restores / revoke / authority-separation / auditor-excluded — real Daml Script ledger)", "command": "npm run daml:test:mandate", "assertions": 18, "result": "pass" },
     { "name": "spending-mandate pure logic unit (flag gate / precheck sufficient-insufficient-none-expired-scope / eligible-selection / idempotent-authorization)", "command": "npm run test:mandate", "assertions": 8, "result": "pass" },
+    { "name": "ledger-error classification (real devnet 403 payload → throttled; permission_denied/429/resource_exhausted; unreachable distinct; genuine failures → other; empty-safe)", "command": "npm run test:ledger-errors", "assertions": 6, "result": "pass" },
     { "name": "LIVE spending-mandate e2e (status readable / exact-decrement / over-budget 402 zero-writes / resume idempotency / --deep direct over-limit REAL ledger failure + TopUp)", "command": "npm run preflight:mandate", "assertions": 0, "result": "pending", "mode": "devnet", "note": "written + ready; NOT yet executed live — the ledger half was aborted (devnet write-throttle) so the DAR is not uploaded. Runs on write-recovery; not counted in totals until it passes." },
     { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 34, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE performance probe e2e (devnet)", "command": "npm run preflight:probe", "assertions": 28, "result": "pass", "mode": "devnet", "fallback": false },
@@ -49,7 +58,7 @@
     { "name": "LIVE auditor-view market (recompute + scoped Iou + recent-form/winsByService + ≥2 distinct recent winners + un-killable default-budget 3-bid)", "command": "npm run preflight:market", "assertions": 26, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE original privacy (devnet)", "command": "npm run preflight:e2e -- --require-ledger", "assertions": 11, "result": "pass", "mode": "devnet", "fallback": false }
   ],
-  "totals": { "suites": 15, "assertions": 254, "note": "+2 suites / +26 assertions this pass, all local + green (tacit-mandate daml matrix 18, spending-mandate unit 8). The LIVE preflight:mandate is written but pending devnet write-recovery and is NOT counted." },
+  "totals": { "suites": 16, "assertions": 260, "note": "+3 suites / +32 assertions across the mandate + endgame passes, all local + green (tacit-mandate daml matrix 18, spending-mandate unit 8, ledger-error classification 6). The LIVE preflight:mandate is written but pending devnet write-recovery and is NOT counted." },
   "liveOrigin": "https://tacit.80-225-209-190.sslip.io",
   "verifiedThroughHttps": true
 }
