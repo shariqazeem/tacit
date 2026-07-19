@@ -65,13 +65,22 @@ boundaries are shaped so a remote adapter can bind an Agent Card to a Canton par
 
 ## 7. Build checkpoints (this branch)
 
-- **P1** shared agent schemas + pure task planner + provider decision engine + gates + reconcile — with
-  a `test:agents` suite covering the mandatory proofs. *(this session)*
-- **P2** model-backed buyer task planning behind the deterministic gate (uses the existing gateway).
-- **P3** provider decision engine wired into the runner (a provider genuinely declines).
-- **P4** buyer runtime + file journal + Decision Room API.
-- **P5** Decision Room UI from structured events.
-- **P6** adversarial/crash/privacy/build verification.
+- **[x] P1 — pure agent core + proofs (DONE, tested).** `shared/agentCore.ts` (schemas + injection-
+  resistant gates + verifyEvidence), `shared/taskPlanner.ts` (multi-task planner), `shared/providerDecision.ts`
+  (BID/DECLINE/NEED_CLARIFICATION), `shared/agentReconcile.ts` (crash recovery). `npm run test:agents` —
+  **13 proof groups green** (all 10 mandatory proofs + runtime).
+- **[x] P4 core — durable run machine (DONE, tested).** `shared/agentRun.ts` (stateful multi-task loop
+  + verified-only aggregation); `app/lib/agentJournal.ts` (file journal) + `app/lib/buyerAgentRuntime.ts`
+  (orchestrator composing the tested core with an injected `procure` fn — testable, decoupled from the
+  live ledger). Typechecks + builds.
+- **[ ] P2 — model-backed task selection** behind `parseModelTaskSelection` (the gateway nudges `needs`;
+  the gate + planner stay authoritative). Wiring point ready in `createRun(opts.modelBacked)`.
+- **[ ] P3 — provider decision engine wired into the runner** (a live provider genuinely declines).
+  `decide()` is ready; the runner bid loop calls it before `quotePrice`.
+- **[ ] P5 — Decision Room UI** from `runRecord()` structured events (extends `/work`).
+- **[ ] P6 — live adversarial/crash/privacy verification** (needs a runtime host + un-throttled ledger).
+
+Not deployed — the submission URL still serves tag `submission-final-2026-07-20`.
 
 ## 8. Mandatory proofs → where enforced
 
