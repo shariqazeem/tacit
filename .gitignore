@@ -64,3 +64,9 @@ TACIT_FIRST_PLACE_BUILD_STRATEGY_AND_PROMPTS.md
 runner/src/_shared.ts
 runner/src/_market.ts
 runner/src/_agentPlanner.ts
+
+# tacit-mandate build artifacts
+tacit-mandate/.daml/
+tacit-mandate-test/.daml/
+
+runner/src/_mandate.ts

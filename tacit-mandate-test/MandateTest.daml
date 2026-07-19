@@ -1,0 +1,113 @@
+-- Tacit — ledger-enforced proof of the spending-mandate rules. `query @T party`
+-- returns ONLY contracts `party` is a stakeholder of, so the auditor-exclusion
+-- (privacy) is also proven here.
+module MandateTest where
+
+import Daml.Script
+import Tacit.Mandate
+import DA.Time (time)
+import DA.Date (date, Month(Jan))
+import DA.Assert ((===))
+
+data P = P with principal : Party; agent : Party; auditor : Party
+
+setup : Script P
+setup = do
+  principal <- allocateParty "Principal"
+  agent <- allocateParty "Agent"
+  auditor <- allocateParty "Auditor"
+  pure P with principal; agent; auditor
+
+mkMandate : P -> Decimal -> [Text] -> Optional Time -> Script (ContractId SpendMandate)
+mkMandate p lim services expiry = submit p.principal $ createCmd SpendMandate with
+  principal = p.principal; agent = p.agent; label = "Standing mandate"; currency = "USD.demo"
+  limit = lim; remaining = lim; allowedServices = services; expiresAtUtc = expiry
+
+-- 1) Authorize decrements remaining and emits a SpendAuthorization.
+testAuthorizeDecrements : Script ()
+testAuthorizeDecrements = do
+  p <- setup
+  m0 <- mkMandate p 500.0 [] None
+  (m1, authCid) <- submit p.agent $ exerciseCmd m0 Authorize with amount = 31.77; serviceType = "vendor_security_assessment"; jobId = "j1"; rfsId = "WRK-j1"
+  Some m1c <- queryContractId p.agent m1
+  m1c.remaining === 468.23 -- 500 - 31.77 (round-trip decimal exact)
+  Some a <- queryContractId p.agent authCid
+  a.amount === 31.77
+  a.jobId === "j1"
+
+-- 2) Over-limit Authorize FAILS on-ledger (real command failure, not simulated).
+testOverLimitFails : Script ()
+testOverLimitFails = do
+  p <- setup
+  m0 <- mkMandate p 10.0 [] None
+  submitMustFail p.agent $ exerciseCmd m0 Authorize with amount = 40.0; serviceType = "vendor_security_assessment"; jobId = "j2"; rfsId = "WRK-j2"
+  -- and a non-positive amount is refused too
+  submitMustFail p.agent $ exerciseCmd m0 Authorize with amount = 0.0; serviceType = "vendor_security_assessment"; jobId = "j2b"; rfsId = "WRK-j2b"
+
+-- 3) Service scope is enforced when allowedServices is non-empty; unrestricted when empty.
+testServiceScope : Script ()
+testServiceScope = do
+  p <- setup
+  scoped <- mkMandate p 500.0 ["web_performance_probe"] None
+  submitMustFail p.agent $ exerciseCmd scoped Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j3"; rfsId = "WRK-j3"
+  -- the permitted service succeeds
+  (_, _) <- submit p.agent $ exerciseCmd scoped Authorize with amount = 10.0; serviceType = "web_performance_probe"; jobId = "j3b"; rfsId = "WRK-j3b"
+  pure ()
+
+-- 4) Expiry is enforced against ledger time.
+testExpiry : Script ()
+testExpiry = do
+  p <- setup
+  setTime (time (date 2026 Jan 1) 0 0 0) -- move the ledger clock to a known "now"
+  let expiry = time (date 2020 Jan 1) 0 0 0 -- before now → expired
+  expired <- mkMandate p 500.0 [] (Some expiry)
+  submitMustFail p.agent $ exerciseCmd expired Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j4"; rfsId = "WRK-j4"
+  -- a far-future expiry still authorizes
+  let future = time (date 2999 Jan 1) 0 0 0
+  live <- mkMandate p 500.0 [] (Some future)
+  (_, _) <- submit p.agent $ exerciseCmd live Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j4b"; rfsId = "WRK-j4b"
+  pure ()
+
+-- 5) TopUp (principal) restores budget so a previously-too-large spend now clears.
+testTopUpRestores : Script ()
+testTopUpRestores = do
+  p <- setup
+  m0 <- mkMandate p 10.0 [] None
+  submitMustFail p.agent $ exerciseCmd m0 Authorize with amount = 40.0; serviceType = "vendor_security_assessment"; jobId = "j5"; rfsId = "WRK-j5"
+  m1 <- submit p.principal $ exerciseCmd m0 TopUp with topUpAmount = 100.0
+  Some m1c <- queryContractId p.principal m1
+  m1c.remaining === 110.0
+  m1c.limit === 110.0
+  (_, _) <- submit p.agent $ exerciseCmd m1 Authorize with amount = 40.0; serviceType = "vendor_security_assessment"; jobId = "j5"; rfsId = "WRK-j5"
+  pure ()
+
+-- 6) Revoke (principal) archives the mandate → the agent can no longer authorize.
+testRevoke : Script ()
+testRevoke = do
+  p <- setup
+  m0 <- mkMandate p 500.0 [] None
+  submit p.principal $ exerciseCmd m0 Revoke
+  submitMustFail p.agent $ exerciseCmd m0 Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j6"; rfsId = "WRK-j6"
+
+-- 7) Authority separation: the agent cannot TopUp/Revoke; the principal cannot Authorize.
+testAuthoritySeparation : Script ()
+testAuthoritySeparation = do
+  p <- setup
+  m0 <- mkMandate p 500.0 [] None
+  submitMustFail p.agent $ exerciseCmd m0 TopUp with topUpAmount = 100.0
+  submitMustFail p.agent $ exerciseCmd m0 Revoke
+  submitMustFail p.principal $ exerciseCmd m0 Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j7"; rfsId = "WRK-j7"
+
+-- 8) Privacy: the auditor is NOT a stakeholder of the mandate or the authorization.
+testAuditorExcluded : Script ()
+testAuditorExcluded = do
+  p <- setup
+  m0 <- mkMandate p 500.0 [] None
+  (_, authCid) <- submit p.agent $ exerciseCmd m0 Authorize with amount = 10.0; serviceType = "vendor_security_assessment"; jobId = "j8"; rfsId = "WRK-j8"
+  auditorMandates <- query @SpendMandate p.auditor
+  auditorMandates === []
+  auditorAuths <- query @SpendAuthorization p.auditor
+  auditorAuths === []
+  -- but the agent CAN read its own mandate + authorization
+  agentAuth <- queryContractId p.agent authCid
+  assertMsg "agent reads its own authorization" (agentAuth /= None)

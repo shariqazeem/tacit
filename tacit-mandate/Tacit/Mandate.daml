@@ -1,0 +1,86 @@
+-- Tacit — on-ledger SPENDING MANDATES (additive, standalone package).
+--
+-- A human principal grants a buyer agent a private budget envelope as a Daml
+-- contract. Every procurement authorizes its spend against it on-ledger; an
+-- exhausted (or scoped-out, or expired) mandate is refused BY THE LEDGER — a real
+-- command failure, never a simulated one.
+--
+-- PRIVACY BY DESIGN: the mandate is between principal and agent ONLY. The auditor
+-- is NOT a stakeholder — an agent's spending authority is confidential. Nothing
+-- here is a data-dependency on the frozen packages; jobs are linked by Text
+-- (jobId / rfsId), so `tacit` and `tacit-work` stay byte-identical.
+--
+-- HONESTY: authorization and award are SEQUENTIAL ledger transactions — the agent
+-- authorizes the spend, then (in a separate transaction) awards + pays. They are
+-- NOT atomic; the invariant we guarantee is only that the award never PRECEDES a
+-- successful authorization.
+
+module Tacit.Mandate where
+
+-- A private spending mandate. signatory principal; observer agent (only). Grows
+-- with TopUp, shrinks as the agent authorizes spends.
+template SpendMandate
+  with
+    principal : Party
+    agent : Party
+    label : Text
+    currency : Text            -- "USD.demo" — a demo voucher, not real money
+    limit : Decimal            -- total granted so far (grows with TopUp)
+    remaining : Decimal        -- unspent budget
+    allowedServices : [Text]   -- [] = unrestricted; else the spend's serviceType must be a member
+    expiresAtUtc : Optional Time
+  where
+    signatory principal
+    observer agent
+
+    -- The AGENT authorizes one spend against the envelope. The ledger refuses an
+    -- over-budget, out-of-scope, or expired spend (assertMsg → command failure).
+    -- Recreates the mandate with a decremented balance and emits an authorization
+    -- receipt co-signed by principal + agent (principal's authority flows from the
+    -- mandate's signatory; the agent is the controller).
+    choice Authorize : (ContractId SpendMandate, ContractId SpendAuthorization)
+      with
+        amount : Decimal
+        serviceType : Text
+        jobId : Text
+        rfsId : Text
+      controller agent
+      do
+        now <- getTime
+        assertMsg "amount must be positive" (amount > 0.0)
+        assertMsg "amount exceeds the mandate's remaining budget" (amount <= remaining)
+        assertMsg "serviceType is not permitted by this mandate" (null allowedServices || serviceType `elem` allowedServices)
+        assertMsg "the mandate has expired" (optional True (\expTime -> now <= expTime) expiresAtUtc)
+        newMandate <- create this with remaining = remaining - amount
+        auth <- create SpendAuthorization with
+          principal; agent; amount; currency; serviceType; jobId; rfsId; authorizedAtUtc = now
+        pure (newMandate, auth)
+
+    -- The PRINCIPAL adds budget (raises both remaining and the running limit).
+    choice TopUp : ContractId SpendMandate
+      with topUpAmount : Decimal
+      controller principal
+      do
+        assertMsg "top-up must be positive" (topUpAmount > 0.0)
+        create this with remaining = remaining + topUpAmount; limit = limit + topUpAmount
+
+    -- The PRINCIPAL revokes the mandate (archives it → the agent loses authority).
+    choice Revoke : ()
+      controller principal
+      do pure ()
+
+-- The on-ledger authorization receipt. Co-signed by principal + agent; confidential
+-- to them (the auditor is not a stakeholder). Carries jobId so the orchestrator can
+-- resolve idempotency: if an authorization for a jobId already exists, don't re-authorize.
+template SpendAuthorization
+  with
+    principal : Party
+    agent : Party
+    amount : Decimal
+    currency : Text
+    serviceType : Text
+    jobId : Text
+    rfsId : Text
+    authorizedAtUtc : Time
+  where
+    signatory principal, agent

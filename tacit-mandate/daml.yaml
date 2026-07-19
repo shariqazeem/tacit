@@ -1,0 +1,10 @@
+sdk-version: 3.4.11
+name: tacit-mandate
+version: 0.1.0
+source: .
+# Standalone additive package for on-ledger spending mandates. NO data-dependency
+# on the frozen `tacit` / `tacit-work` packages — linkage to jobs is by Text
+# reference (jobId / rfsId), so the two frozen package ids never change.
+dependencies:
+  - daml-prim
+  - daml-stdlib
