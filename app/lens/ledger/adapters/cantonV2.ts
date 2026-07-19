@@ -16,6 +16,7 @@
 // pinned empirically against a live Canton 3.4.11 participant in §2.
 
 import type { ContractRow, LedgerAdapter, LedgerHealth } from './types';
+import { classifyLedgerError } from '@/shared/ledgerErrors';
 import {
   APP_ID,
   LEDGER_MODE,
@@ -165,16 +166,37 @@ function ledgerEffectsFormat(actAs: string[]) {
   };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The shared devnet validator imposes a per-credential WRITE-BURST limit: a full
+// procurement fires ~11 submits in a short window and can trip a 403 "security-sensitive"
+// rejection. That is a REJECTION (the command never committed), so retrying is safe — and
+// because the commandId is FIXED across retries, Canton's command dedup is a second guard
+// against any double-execution. We back off and retry ONLY the throttle class; every other
+// failure throws immediately. Env-tunable; 0 retries = today's behavior.
+const SUBMIT_RETRIES = Math.max(0, Number(process.env.TACIT_SUBMIT_RETRIES ?? 5));
+const SUBMIT_BACKOFF_MS = [1500, 3000, 6000, 10000, 15000];
+
 async function submit(command: Record<string, unknown>, actAs: string[]): Promise<any> {
   // v2 wraps the JsCommands (commands/commandId/userId/actAs) under a `commands`
   // object, with transactionFormat a sibling. userId must be the token's user.
+  // commandId is generated ONCE and reused across retries (dedup-safe).
   const body = {
     commands: { commands: [command], commandId: cmdId(), userId: V2_USER_ID, actAs, readAs: actAs },
     transactionFormat: ledgerEffectsFormat(actAs),
   };
-  const r = await req('/v2/commands/submit-and-wait-for-transaction', { method: 'POST', body });
-  if (r.http < 200 || r.http >= 300) throw new Error(`submit failed: HTTP ${r.http} ${r.text.slice(0, 300)}`);
-  return r.json;
+  let last = '';
+  for (let attempt = 0; ; attempt++) {
+    const r = await req('/v2/commands/submit-and-wait-for-transaction', { method: 'POST', body });
+    if (r.http >= 200 && r.http < 300) return r.json;
+    last = r.text || `HTTP ${r.http}`;
+    const throttled = classifyLedgerError(last) === 'throttled';
+    if (throttled && attempt < SUBMIT_RETRIES) {
+      await sleep(SUBMIT_BACKOFF_MS[Math.min(attempt, SUBMIT_BACKOFF_MS.length - 1)]);
+      continue; // the shared validator is bursting — wait out the window and retry the same command
+    }
+    throw new Error(`submit failed: HTTP ${r.http} ${last.slice(0, 300)}`);
+  }
 }
 
 async function ledgerEnd(): Promise<number> {

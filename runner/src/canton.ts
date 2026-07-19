@@ -2,8 +2,16 @@
 // OAuth2 client-credentials (cached + refresh-on-401), same verified wire shapes
 // as the app's cantonV2 adapter. Secrets are never logged.
 import type { RunnerConfig } from './config.js';
+import { classifyLedgerError } from './_ledgerErrors.js';
 
 let cached: { v: string; exp: number } | null = null;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Same per-credential write-burst mitigation as the app: a 403 "security-sensitive"
+// is a REJECTION (never committed), so retrying the SAME command (fixed commandId,
+// dedup-safe) after a backoff rides out the burst. Only the throttle class is retried.
+const SUBMIT_RETRIES = Math.max(0, Number(process.env.TACIT_SUBMIT_RETRIES ?? 5));
+const SUBMIT_BACKOFF_MS = [1500, 3000, 6000, 10000, 15000];
 
 async function token(cfg: RunnerConfig, force = false): Promise<string> {
   const now = Date.now();
@@ -62,10 +70,19 @@ export class Canton {
   }
 
   async submit(command: Record<string, unknown>, actAs: string[]): Promise<any> {
+    // commandId generated ONCE, reused across retries (dedup-safe).
     const body = { commands: { commands: [command], commandId: this.cmdId(), userId: this.cfg.userId, actAs, readAs: actAs }, transactionFormat: this.ledgerEffects(actAs) };
-    const r = await req(this.cfg, '/v2/commands/submit-and-wait-for-transaction', { method: 'POST', body });
-    if (r.http < 200 || r.http >= 300) throw new Error(`submit failed HTTP ${r.http}: ${r.text.slice(0, 300)}`);
-    return r.json;
+    let last = '';
+    for (let attempt = 0; ; attempt++) {
+      const r = await req(this.cfg, '/v2/commands/submit-and-wait-for-transaction', { method: 'POST', body });
+      if (r.http >= 200 && r.http < 300) return r.json;
+      last = r.text || `HTTP ${r.http}`;
+      if (classifyLedgerError(last) === 'throttled' && attempt < SUBMIT_RETRIES) {
+        await sleep(SUBMIT_BACKOFF_MS[Math.min(attempt, SUBMIT_BACKOFF_MS.length - 1)]);
+        continue;
+      }
+      throw new Error(`submit failed HTTP ${r.http}: ${last.slice(0, 300)}`);
+    }
   }
 
   async create(templateId: string, args: Record<string, unknown>, actAs: string[]): Promise<string> {
