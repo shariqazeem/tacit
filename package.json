@@ -36,7 +36,8 @@
     "preflight:console": "node scripts/preflight-console.mjs --require-ledger --require-runners",
     "preflight:probe": "node scripts/preflight-probe.mjs --require-ledger --require-runners",
     "preflight:market": "node scripts/preflight-market.mjs --require-ledger --require-runners",
-    "preflight:mandate": "node scripts/preflight-mandate.mjs --require-ledger"
+    "preflight:mandate": "node scripts/preflight-mandate.mjs --require-ledger",
+    "test:agents": "node scripts/test-agents.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.23.24",

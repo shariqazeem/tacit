@@ -71,3 +71,8 @@ tacit-mandate-test/.daml/
 
 runner/src/_mandate.ts
 runner/src/_ledgerErrors.ts
+runner/src/_agentCore.ts
+runner/src/_taskPlanner.ts
+runner/src/_providerDecision.ts
+runner/src/_agentReconcile.ts
+.agent-journal/
