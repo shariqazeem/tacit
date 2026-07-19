@@ -1,5 +1,29 @@
 # Tacit — submission release candidate
 
+## User wallet + human-first product — a real person on Canton (2026-07-19)
+
+Turned "agents playing with demo credits" into a product a real user shows up and uses. The human
+**principal** is now a first-class participant, not an invisible party.
+
+- **`/wallet` — your workspace on Canton (live).** Shows the user's real Canton identity
+  (`TacitPrincipal::1220a14c…`), their agent, and the **ledger-enforced budget** they grant it —
+  with a big live balance, a spend/limit bar, and their on-ledger **spend history** (each
+  `SpendAuthorization` the agent recorded). Real principal-side actions: **Top up** (`TopUp`),
+  **Revoke** (`Revoke`), **Grant** (create `SpendMandate`) — all real on-ledger writes. A live
+  `TopUp(+250)` was confirmed on devnet (mandate → **1000/1000 USD.demo**). These are single
+  lightweight submits, so they **succeed even while a full procurement burst is rate-limited** — the
+  page always has a working on-ledger interaction to demo.
+- **Repositioned human-first.** Hero → "Your AI agent hires a private market — on a budget you
+  control"; primary CTA → **Open your workspace**; "How it works" gains step **00 · You set the
+  budget**. Nav leads with **Wallet**.
+- **Endpoints:** `GET /api/wallet` (workspace), `POST /api/wallet/{topup,revoke,grant}` — flag-gated
+  (honest 404 off), throttle → calm 503. Deployed + verified live at 1440 and 375.
+- **Honest scope unchanged:** settlement is still a `USD.demo` voucher (not Canton Coin); the wallet
+  makes the *human* and the *budget* real and on-ledger. Real Canton Coin settlement is the next step.
+
+---
+
+
 ## Final product pass — judge-path polish, planner 18/18, mandates ACTIVATED live (2026-07-19)
 
 Perfecting the exact path a judge walks. No new features. Everything within the shipped design
