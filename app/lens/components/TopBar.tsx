@@ -7,6 +7,7 @@ import { C, FONT, glassBlur } from './theme';
 import { SourceBadge } from './SourceBadge';
 
 const NAV = [
+  { href: '/wallet', label: 'Wallet' },
   { href: '/work', label: 'Work' },
   { href: '/market', label: 'Market' },
   { href: '/lens', label: 'Lens' },

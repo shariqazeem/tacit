@@ -7,7 +7,7 @@
 // Privacy: a SpendMandate is signed by the principal and observed by the agent ONLY —
 // the auditor is NOT a stakeholder, so it never appears in these reads. We never log
 // mandate values.
-import { exercise, queryAs, ensureParty, pinnedParty, partyHint, ledgerReachable } from './client';
+import { create, exercise, queryAs, ensureParty, pinnedParty, partyHint, ledgerReachable } from './client';
 import {
   mandateEnabled, pickEligibleMandate, findExistingAuthorization,
   type MandateView, type AuthorizationView,
@@ -157,5 +157,107 @@ export async function getMandateStatus(buyerName?: string): Promise<MandateStatu
         }
       : null,
     count: active.length,
+  };
+}
+
+// ── PRINCIPAL side — the real HUMAN user's controls over their agent's budget ──
+// The principal is the person/business that grants + funds the agent. These are the
+// user-facing on-ledger actions: fund (TopUp), stop (Revoke), (re)grant, and read
+// the workspace. TopUp/Revoke/Grant are single lightweight submits (they succeed even
+// while a full procurement burst is rate-limited).
+
+/** The human principal party — the real user who grants + funds the agent's budget. */
+export function resolvePrincipalParty(): string | null {
+  return process.env.TACIT_PRINCIPAL_PARTY || pinnedParty('TacitPrincipal') || null;
+}
+
+/** Active SpendMandates the principal SIGNED (the budgets this user granted). */
+export async function queryPrincipalMandates(principal: string): Promise<MandateView[]> {
+  const rows = await queryAs(principal, [TM.SpendMandate]);
+  return rows.filter((r) => String(r.payload?.principal) === principal).map(toMandate);
+}
+
+/** The user's spend history — every authorization the principal co-signed (a spend by its agent). */
+export async function queryPrincipalAuthorizations(principal: string): Promise<AuthorizationView[]> {
+  const rows = await queryAs(principal, [TM.SpendAuthorization]);
+  return rows
+    .filter((r) => String(r.payload?.principal) === principal)
+    .map(toAuthorization)
+    .sort((a, b) => (a.authorizedAtUtc < b.authorizedAtUtc ? 1 : -1)); // newest first
+}
+
+/** Pick the user's active headline mandate (most remaining), or null. */
+function headlineMandate(mandates: MandateView[]): MandateView | null {
+  const nowIso = new Date().toISOString();
+  const active = mandates.filter((m) => !m.expiresAtUtc || nowIso <= m.expiresAtUtc);
+  return active.slice().sort((a, b) => (b.remaining - a.remaining) || (a.contractId < b.contractId ? -1 : 1))[0] || null;
+}
+
+/** The PRINCIPAL adds budget to its mandate (real on-ledger TopUp). Resolves the mandate
+ *  server-side. Returns the new state. Throws on a real ledger failure (caller maps to 4xx/503). */
+export async function topUpMandate(principal: string, amount: number): Promise<{ mandateCid: string; remaining: number; limit: number; currency: string }> {
+  const before = headlineMandate(await queryPrincipalMandates(principal));
+  if (!before) throw new Error('no active mandate to top up');
+  await exercise(TM.SpendMandate, before.contractId, 'TopUp', { topUpAmount: String(amount) }, [principal]);
+  const after = headlineMandate(await queryPrincipalMandates(principal));
+  return { mandateCid: after?.contractId || '', remaining: after?.remaining ?? 0, limit: after?.limit ?? 0, currency: after?.currency || before.currency };
+}
+
+/** The PRINCIPAL revokes its mandate (archives it → the agent loses spending authority). */
+export async function revokeMandate(principal: string): Promise<void> {
+  const m = headlineMandate(await queryPrincipalMandates(principal));
+  if (!m) return; // already none
+  await exercise(TM.SpendMandate, m.contractId, 'Revoke', {}, [principal]);
+}
+
+/** Grant a NEW mandate (create as principal) — onboarding, or re-granting after a revoke. */
+export async function grantMandate(
+  principal: string,
+  agent: string,
+  args: { label: string; currency: string; limit: number; allowedServices: string[] },
+): Promise<string> {
+  return create(TM.SpendMandate, {
+    principal, agent, label: args.label, currency: args.currency,
+    limit: String(args.limit.toFixed(2)), remaining: String(args.limit.toFixed(2)),
+    allowedServices: args.allowedServices, expiresAtUtc: null,
+  }, [principal]);
+}
+
+export interface WorkspaceView {
+  enabled: boolean;
+  ledgerReachable: boolean;
+  packageId: string;
+  principal: string | null; // the user's Canton identity
+  agent: string | null;     // the agent that works for them
+  mandate: {
+    contractId: string; label: string; currency: string;
+    limit: number; remaining: number; spent: number;
+    allowedServices: string[]; expiresAtUtc: string | null;
+  } | null;
+  history: AuthorizationView[]; // the agent's spends the user authorized (newest first)
+}
+
+/** The human user's workspace: their Canton identity, the budget they granted their agent,
+ *  and their on-ledger spend history. Reads only — never throws for the caller. */
+export async function getWorkspace(): Promise<WorkspaceView> {
+  const base = { enabled: mandateModeOn(), ledgerReachable: false, packageId: MANDATE_PKG_ID, principal: null, agent: null, mandate: null, history: [] as AuthorizationView[] };
+  if (!mandateModeOn()) return base;
+  if (!(await ledgerReachable())) return { ...base, enabled: true };
+  const principal = resolvePrincipalParty();
+  if (!principal) return { ...base, enabled: true, ledgerReachable: true };
+  const mandates = await queryPrincipalMandates(principal);
+  const m = headlineMandate(mandates);
+  const history = await queryPrincipalAuthorizations(principal);
+  const agent = m?.agent || (await resolveAgentParty());
+  return {
+    enabled: true,
+    ledgerReachable: true,
+    packageId: MANDATE_PKG_ID,
+    principal,
+    agent,
+    mandate: m
+      ? { contractId: m.contractId, label: m.label, currency: m.currency, limit: m.limit, remaining: m.remaining, spent: Math.max(0, m.limit - m.remaining), allowedServices: m.allowedServices, expiresAtUtc: m.expiresAtUtc }
+      : null,
+    history,
   };
 }
