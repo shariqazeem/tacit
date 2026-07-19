@@ -288,11 +288,17 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
           </>
         )}
         <Row label="Byte length" mono>{art.byteLength}{art.buyerComputedByteLength != null ? ` (buyer: ${art.buyerComputedByteLength})` : ''}</Row>
+        {ev.mandateAuthorizationContractId && <Row label="Spend authorization"><CopyId id={ev.mandateAuthorizationContractId} /></Row>}
         <Row label="Settlement"><CopyId id={ev.settlementContractId} /></Row>
         {ev.paymentIouContractId && <Row label="Payment IOU"><CopyId id={ev.paymentIouContractId} /></Row>}
         {ev.assignmentContractId && <Row label="Assignment"><CopyId id={ev.assignmentContractId} /></Row>}
         {ev.deliveryContractId && <Row label="Private delivery"><CopyId id={ev.deliveryContractId} /></Row>}
         <Row label="Delivery receipt"><CopyId id={ev.receiptContractId} /></Row>
+        {result.mandate && (
+          <p className="mt-3" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12, lineHeight: 1.5 }}>
+            The spend was authorized on-ledger against the agent&rsquo;s standing mandate in a <em>separate</em> Canton transaction, immediately before the award — the award never precedes authorization.{result.mandate.remainingAfter != null ? ` ${result.mandate.remainingAfter} demo credits remain on the mandate.` : ''}
+          </p>
+        )}
         <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>Canton proves who can see what, that payment happened, and that a commitment was made. The buyer independently recomputes the hash and validates the schema, target and score off-ledger. Canton does not verify SHA-256 or report correctness.</p>
       </Card>
 

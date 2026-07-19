@@ -19,6 +19,10 @@ import {
   WORK_SCHEMA, WORK_PERSONAS, type Persona, type WorkResult, type ServiceReport, type BidView,
 } from './workTypes';
 import { getService, evaluatePolicy, policiesForService, type PolicyId, type PolicyResult } from '@/shared/services';
+import {
+  mandateModeOn, queryAgentMandates, queryAgentAuthorizations, authorizeSpend, MANDATE_PKG_ID,
+} from './mandate';
+import { precheckMandate, pickEligibleMandate, findExistingAuthorization, MANDATE_INSUFFICIENT } from '@/shared/mandate';
 
 const WORK_PKG = process.env.TACIT_WORK_PACKAGE_NAME || 'tacit-work';
 const CORE_PKG_ID = PACKAGE_ID || 'fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff';
@@ -128,6 +132,13 @@ export async function procureWork(
   let visReceipt = boolMap();
   let didAward = false;
 
+  // ── Standing spend mandate (tacit-mandate) — FLAG-GATED. Off/unset ⇒ this whole
+  // block is skipped and behavior is bit-for-bit today's. On ⇒ the buyer agent must
+  // authorize each spend against a private on-ledger budget granted by its principal.
+  const mandateOn = mandateModeOn();
+  let mandateAuthorizationCid = '';
+  let mandateRemainingAfter: number | null = null;
+
   // Detect an existing Assignment up front: Assign CONSUMES the ActiveWorkRequest,
   // so on a replay we must NOT re-Open a duplicate request — we resume from here.
   const existingAssign = (await queryAs(buyer, [TW.Assignment], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null;
@@ -137,6 +148,19 @@ export async function procureWork(
   if (!existingAssign) {
     let awr = (await queryAs(buyer, [TW.ActiveWorkRequest], { jobId: params.jobId })).find((r) => r.payload.rfsId === rfsId) || null;
     if (!awr) {
+      // Read-only spend pre-check BEFORE the first ledger write: an eligible mandate must
+      // have `remaining >= maxBudget`. If not, fail here with MANDATE_INSUFFICIENT and ZERO
+      // writes — the request is never opened. (Real budget enforcement is the on-ledger
+      // Authorize below; this is just an honest early refusal.)
+      if (mandateOn) {
+        const mandates = await queryAgentMandates(buyer);
+        const pc = precheckMandate(mandates, params.maxBudget, params.serviceType, new Date().toISOString());
+        if (pc.ok !== true) {
+          const e = new Error(pc.reason) as Error & { code?: string };
+          e.code = pc.code; // MANDATE_INSUFFICIENT — routes map this to an honest 4xx
+          throw e;
+        }
+      }
       const draftCid = await create(TW.RequestDraft, {
         jobId: params.jobId, rfsId, buyer, invitedProviders: invited, serviceType: params.serviceType,
         serviceInput, title: 'Website due-diligence audit', description: `site_audit of ${url}`,
@@ -180,6 +204,36 @@ export async function procureWork(
     const losers = bids.filter((b) => b.contractId !== winner.contractId).map((b) => b.contractId);
     const rfs = (await queryAs(buyer, [T.Rfs], { rfsId }))[0];
     if (!rfs) throw new Error('frozen Rfs missing before award');
+
+    // ── SPEND AUTHORIZATION (flag-gated) — a SEPARATE ledger transaction that runs
+    // immediately BEFORE any payment is created or awarded. The award never precedes
+    // authorization: if the mandate is drained/expired/out-of-scope the Authorize choice
+    // FAILS on the ledger and this throws — no IOU is created, no Award happens. This is a
+    // REAL command failure, never simulated. Idempotent on jobId for resumed awards.
+    if (mandateOn) {
+      const priorAuths = await queryAgentAuthorizations(buyer);
+      const prior = findExistingAuthorization(priorAuths, params.jobId);
+      if (prior) {
+        mandateAuthorizationCid = prior.contractId;
+        const ms = await queryAgentMandates(buyer);
+        const m = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
+        mandateRemainingAfter = m ? m.remaining : null;
+      } else {
+        const ms = await queryAgentMandates(buyer);
+        const eligible = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
+        if (!eligible) {
+          const e = new Error('no eligible spending mandate at authorization time') as Error & { code?: string };
+          e.code = MANDATE_INSUFFICIENT;
+          throw e;
+        }
+        const spend = await authorizeSpend(buyer, eligible.contractId, {
+          amount: winner.price, serviceType: params.serviceType, jobId: params.jobId, rfsId,
+        });
+        mandateAuthorizationCid = spend.authorizationCid;
+        mandateRemainingAfter = spend.remainingAfter;
+      }
+    }
+
     const iouCid = await create(T.Iou, { issuer: buyer, owner: buyer, amount: String(winner.price), currency: 'USD.demo' }, [buyer]);
     const settlementCid: string = await exercise(T.Rfs, rfs.contractId, 'Award', { winningBid: winner.contractId, losingBids: losers, paymentCid: iouCid }, [buyer]);
     settleRow = { contractId: settlementCid, payload: { provider: winner.provider, price: winner.price, paidIou: iouCid } } as any;
@@ -190,6 +244,19 @@ export async function procureWork(
   const winnerParty = String(settleP.provider);
   const amount = Number(settleP.price);
   const paymentIou = String(settleP.paidIou || '');
+
+  // On a RESUMED award the Authorize block above was skipped — recover the existing
+  // authorization (idempotent read) so the evidence/UI still reflects the on-ledger spend.
+  if (mandateOn && !mandateAuthorizationCid) {
+    const priorAuths = await queryAgentAuthorizations(buyer);
+    const prior = findExistingAuthorization(priorAuths, params.jobId);
+    if (prior) {
+      mandateAuthorizationCid = prior.contractId;
+      const ms = await queryAgentMandates(buyer);
+      const m = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
+      mandateRemainingAfter = m ? m.remaining : null;
+    }
+  }
 
   // ── 3) ASSIGN (idempotent; reuse the Assignment detected up front) ──────────
   let assignmentCid: string;
@@ -276,6 +343,10 @@ export async function procureWork(
   const agentTrace: { step: string; detail: string }[] = [
     { step: 'request_opened', detail: rfsId },
     { step: 'bids_received', detail: `${collectedBids.length} sealed bids collected this request` },
+    // Spend authorized on-ledger BEFORE the award (flag-gated; the award never precedes it).
+    ...(mandateOn && mandateAuthorizationCid
+      ? [{ step: 'spend_authorized', detail: `${mandateAuthorizationCid.slice(0, 12)}… (mandate authorized before award)` }]
+      : []),
     { step: 'award_settled', detail: `${settlementCid.slice(0, 12)}…` },
     { step: 'assignment_created', detail: `${assignmentCid.slice(0, 12)}…` },
     ...(reportAvailable
@@ -327,6 +398,10 @@ export async function procureWork(
       assignmentContractId: assignmentCid || undefined,
       deliveryContractId: deliveryCid || undefined,
       receiptContractId: receipt!.contractId,
+      // On-ledger spend authorization — present ONLY when the flag is on (optional fields
+      // are omitted from JSON when off, keeping the response byte-for-byte today's shape).
+      ...(mandateOn && mandateAuthorizationCid ? { mandateAuthorizationContractId: mandateAuthorizationCid } : {}),
+      ...(mandateOn && mandateRemainingAfter != null ? { mandateRemaining: mandateRemainingAfter } : {}),
     },
     resumption: {
       resumed,
@@ -345,6 +420,18 @@ export async function procureWork(
       privateDelivery: visDelivery,
       receipt: visReceipt,
     },
+    // Standing-mandate summary — OPTIONAL; only present when the flag is on, so the OFF
+    // response is byte-for-byte today's. `undefined` is dropped by JSON.stringify.
+    ...(mandateOn && mandateAuthorizationCid
+      ? {
+          mandate: {
+            enabled: true as const,
+            authorizationContractId: mandateAuthorizationCid,
+            remainingAfter: mandateRemainingAfter,
+            packageId: MANDATE_PKG_ID,
+          },
+        }
+      : {}),
   };
 }
 

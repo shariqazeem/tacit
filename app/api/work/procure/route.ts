@@ -56,6 +56,9 @@ export async function POST(req: Request) {
     const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource, policyId });
     return NextResponse.json(result);
   } catch (e: any) {
+    // An exhausted/expired/out-of-scope spending mandate is an honest 402 (Payment
+    // Required) with ZERO ledger writes — not a 502. The message is the human reason.
+    if (e?.code === 'MANDATE_INSUFFICIENT') return fail(String(e?.message || 'spending mandate insufficient'), 402);
     return fail(String(e?.message || e), 502);
   }
 }

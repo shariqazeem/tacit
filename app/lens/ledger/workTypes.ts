@@ -47,6 +47,22 @@ export interface WorkEvidence {
   assignmentContractId?: string;
   deliveryContractId?: string;
   receiptContractId: string;
+  /** On-ledger spend authorization (tacit-mandate). Present ONLY when TACIT_MANDATE_MODE=on. */
+  mandateAuthorizationContractId?: string;
+  /** Remaining on the mandate AFTER this spend. Present ONLY when the flag is on. */
+  mandateRemaining?: number;
+}
+
+/**
+ * Standing-mandate summary for the /work success view. Present ONLY when
+ * TACIT_MANDATE_MODE=on — an OPTIONAL field, so with the flag off it is omitted
+ * entirely and the serialized WorkResult is byte-for-byte today's shape.
+ */
+export interface WorkMandate {
+  enabled: true;
+  authorizationContractId: string;
+  remainingAfter: number | null;
+  packageId: string;
 }
 
 export interface WorkResumption {
@@ -120,6 +136,8 @@ export interface WorkResult {
   policy: PolicyResult | null;
   agentTrace: AgentTraceEvent[];
   visibility: VisibilitySnapshot;
+  /** Standing-mandate summary — OPTIONAL; present only when TACIT_MANDATE_MODE=on. */
+  mandate?: WorkMandate;
 }
 
 export interface WorkError {

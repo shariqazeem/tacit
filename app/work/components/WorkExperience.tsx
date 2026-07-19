@@ -79,6 +79,51 @@ function SuccessRecap() {
   );
 }
 
+// Standing spend mandate (tacit-mandate) — FLAG-GATED. Fetches /api/mandate/status;
+// on 404 (TACIT_MANDATE_MODE off) it renders NOTHING, so the idle view is bit-for-bit
+// today's. When on, it shows the private budget envelope the human principal granted the
+// agent: remaining of limit, scope, expiry. This is the buyer's OWN read — the auditor is
+// never a stakeholder of a mandate, by design.
+interface MandateStatusView {
+  principal: string | null;
+  mandate: { label: string; currency: string; limit: number; remaining: number; allowedServices: string[]; expiresAtUtc: string | null } | null;
+}
+function StandingMandatePanel() {
+  const [s, setS] = useState<MandateStatusView | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch('/api/mandate/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live && j?.ok) setS({ principal: j.principal, mandate: j.mandate }); })
+      .catch(() => { /* flag off / unreachable → render nothing */ });
+    return () => { live = false; };
+  }, []);
+  if (!s) return null;
+  const m = s.mandate;
+  const scope = m && m.allowedServices.length ? m.allowedServices.map((x) => SERVICE_META[x]?.label ?? x).join(', ') : 'any registered service';
+  const shortP = s.principal ? `${s.principal.slice(0, 10)}…` : 'your principal';
+  return (
+    <div className="material-clear mt-5 p-4" style={{ background: C.violetSoft, borderColor: 'rgba(124,58,237,0.2)' }}>
+      <div className="flex items-center gap-2">
+        <span className="tacit-label" style={{ color: C.violet }}>Standing spend mandate</span>
+        <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>· enforced on-ledger</span>
+      </div>
+      {m ? (
+        <>
+          <div className="mt-1.5" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, fontWeight: 600 }}>
+            {m.remaining} of {m.limit} {m.currency} remaining
+          </div>
+          <div className="mt-1" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12.5, lineHeight: 1.5 }}>
+            Granted by {shortP} · scope: {scope}{m.expiresAtUtc ? ` · expires ${new Date(m.expiresAtUtc).toISOString().slice(0, 10)}` : ''}. Every award authorizes its spend against this envelope; the ledger refuses an over-budget award.
+          </div>
+        </>
+      ) : (
+        <div className="mt-1.5" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12.5 }}>No standing mandate is currently granted to this agent — a principal must grant one before it can spend.</div>
+      )}
+    </div>
+  );
+}
+
 const newJobId = () => `vjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 // Ledger-derived lifecycle stages (advanced ONLY by /api/work/status; no timers).
@@ -290,6 +335,7 @@ function ConsoleIdle(p: any) {
       </div>
 
       <FirstRunStrip />
+      <StandingMandatePanel />
 
       {/* tabs */}
       <div className="mt-6 inline-flex rounded-full p-1" role="tablist" aria-label="Console mode" style={{ background: 'rgba(10,10,11,0.04)', border: `1px solid ${C.hairline}` }}>
