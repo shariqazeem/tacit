@@ -18,8 +18,15 @@ Turned "agents playing with demo credits" into a product a real user shows up an
   budget**. Nav leads with **Wallet**.
 - **Endpoints:** `GET /api/wallet` (workspace), `POST /api/wallet/{topup,revoke,grant}` — flag-gated
   (honest 404 off), throttle → calm 503. Deployed + verified live at 1440 and 375.
-- **Honest scope unchanged:** settlement is still a `USD.demo` voucher (not Canton Coin); the wallet
-  makes the *human* and the *budget* real and on-ledger. Real Canton Coin settlement is the next step.
+- **Real Canton Coin, live (Splice Amulet).** The wallet now shows the **real on-ledger Canton Coin
+  balance** of this validator's onboarded Amulet wallet (`32,039,…​ CC`, devnet), with a working
+  **“Tap 10 devnet CC”** button that **mints real Canton Coin** from the devnet faucet (a real Amulet
+  contract). Wired via the Splice Validator/Wallet API (`app/lens/ledger/coin.ts`, `GET /api/coin`,
+  `POST /api/coin/tap`) using the same OAuth credential — **without touching the frozen settlement
+  Daml.** Verified live (balance read + a real tap → new Amulet + balance moved).
+- **Honest scope:** job *settlement* still moves a `USD.demo` voucher; the CC panel proves the real
+  Canton Coin rail is wired and a party holds + acquires real CC on devnet. Per-user CC custody and
+  CC-denominated settlement are the stated roadmap.
 
 ---
 
