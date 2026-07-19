@@ -159,6 +159,9 @@ export function WalletExperience() {
         </div>
       )}
 
+      {/* Real Canton Coin — the network's native asset, live on devnet (renders only if wired) */}
+      <CoinPanel />
+
       {/* Spend history — the agent's on-ledger spends the user authorized */}
       <div className="mt-8">
         <SectionTitle kicker="on-ledger · private to you and your agent">Your agent’s spending</SectionTitle>
@@ -187,6 +190,55 @@ export function WalletExperience() {
         )}
       </div>
     </Shell>
+  );
+}
+
+// Real Canton Coin (Splice Amulet) on devnet — balance + a devnet faucet tap. Fetches
+// /api/coin; renders NOTHING on 404 (wallet API not wired), so it's purely additive.
+function CoinPanel() {
+  const [c, setC] = useState<{ unlocked: number; locked: number; round: number | null; partyId: string | null; onboarded: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = useCallback(async () => {
+    try { const r = await fetch('/api/coin', { cache: 'no-store' }); if (!r.ok) return; const j = await r.json(); if (j?.ok && j.ledgerReachable) setC(j); } catch { /* not wired */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!c) return null;
+  const tap = async () => {
+    setBusy(true); setNote(null);
+    try {
+      const r = await fetch('/api/coin/tap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 10 }) });
+      const j = await r.json();
+      if (r.ok && j?.ok) { setNote({ ok: true, text: `Minted 10 CC from the devnet faucet — real Amulet ${String(j.contractId).slice(0, 14)}…` }); await load(); }
+      else setNote({ ok: false, text: j?.error || `Tap failed (HTTP ${r.status}).` });
+    } catch (e: any) { setNote({ ok: false, text: String(e?.message || e) }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="material-clear mt-5 p-6" style={{ borderColor: 'rgba(13,148,136,0.22)' }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="tacit-label" style={{ color: C.live }}>Real Canton Coin · devnet · Splice Amulet</span>
+        {c.round != null && <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>round {c.round}</span>}
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(34px, 6vw, 50px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{fmt(c.unlocked)}</span>
+        <span style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15 }}>CC available</span>
+      </div>
+      <p className="mt-3" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.55, maxWidth: '58ch' }}>
+        The network’s native asset, held in this validator’s onboarded wallet on the devnet Global Synchronizer.
+        The <span style={{ fontFamily: FONT.mono }}>tap</span> below mints real Canton Coin from the devnet faucet.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button type="button" disabled={busy} onClick={tap}
+          className="rounded-full px-5 py-2" style={{ background: busy ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer', border: 'none' }}>
+          {busy ? 'Tapping the faucet…' : 'Tap 10 devnet CC →'}
+        </button>
+        {c.partyId && <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>{c.partyId.split('::')[0]}::{(c.partyId.split('::')[1] || '').slice(0, 8)}…</span>}
+      </div>
+      {note && <div className="mt-3" style={{ color: note.ok ? C.live : '#B02A2A', fontFamily: FONT.sans, fontSize: 12.5 }}>{note.ok ? '✓ ' : ''}{note.text}</div>}
+      <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>
+        Honest scope: job settlement still moves a <span style={{ fontFamily: FONT.mono }}>USD.demo</span> voucher. This proves the real Canton Coin rail is wired on devnet; per-user CC custody and CC-denominated settlement are the roadmap.
+      </p>
+    </div>
   );
 }
 
