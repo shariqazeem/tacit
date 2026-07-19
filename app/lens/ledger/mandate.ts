@@ -238,12 +238,13 @@ export interface WorkspaceView {
 }
 
 /** The human user's workspace: their Canton identity, the budget they granted their agent,
- *  and their on-ledger spend history. Reads only — never throws for the caller. */
-export async function getWorkspace(): Promise<WorkspaceView> {
+ *  and their on-ledger spend history. `principalOverride` = the signed-in session account (else
+ *  the global demo principal). Reads only — never throws for the caller. */
+export async function getWorkspace(principalOverride?: string | null): Promise<WorkspaceView> {
   const base = { enabled: mandateModeOn(), ledgerReachable: false, packageId: MANDATE_PKG_ID, principal: null, agent: null, mandate: null, history: [] as AuthorizationView[] };
   if (!mandateModeOn()) return base;
   if (!(await ledgerReachable())) return { ...base, enabled: true };
-  const principal = resolvePrincipalParty();
+  const principal = principalOverride || resolvePrincipalParty();
   if (!principal) return { ...base, enabled: true, ledgerReachable: true };
   const mandates = await queryPrincipalMandates(principal);
   const m = headlineMandate(mandates);

@@ -2,7 +2,8 @@
 // the principal party (raises remaining + limit). A single lightweight submit — succeeds even
 // when a full procurement burst is rate-limited. Flag-gated; throttle → honest 503.
 import { NextResponse } from 'next/server';
-import { topUpMandate, resolvePrincipalParty, mandateModeOn } from '@/app/lens/ledger/mandate';
+import { topUpMandate, mandateModeOn } from '@/app/lens/ledger/mandate';
+import { effectivePrincipal } from '@/app/lens/ledger/account';
 import { classifyLedgerError, LEDGER_WRITE_THROTTLED } from '@/shared/ledgerErrors';
 
 export const dynamic = 'force-dynamic';
@@ -24,8 +25,8 @@ export async function POST(req: Request) {
   if (amount > MAX_TOPUP) return NextResponse.json({ ok: false, error: `amount must be <= ${MAX_TOPUP}` }, { status: 400 });
   const topUp = Math.round(amount * 100) / 100; // 2dp
 
-  const principal = resolvePrincipalParty();
-  if (!principal) return NextResponse.json({ ok: false, error: 'no principal party configured' }, { status: 503 });
+  const principal = await effectivePrincipal();
+  if (!principal) return NextResponse.json({ ok: false, error: 'no account — create one first' }, { status: 409 });
 
   try {
     const result = await topUpMandate(principal, topUp);

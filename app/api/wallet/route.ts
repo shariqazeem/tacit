@@ -3,6 +3,7 @@
 // TACIT_MANDATE_MODE is off. Reads only.
 import { NextResponse } from 'next/server';
 import { getWorkspace, mandateModeOn } from '@/app/lens/ledger/mandate';
+import { sessionPrincipal } from '@/app/lens/ledger/account';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,9 +13,10 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'workspaces are not enabled on this deployment' }, { status: 404 });
   }
   try {
-    const ws = await getWorkspace();
+    const p = await sessionPrincipal();
+    const ws = await getWorkspace(p);
     if (!ws.ledgerReachable) return NextResponse.json({ ok: false, error: 'ledger unreachable' }, { status: 503 });
-    return NextResponse.json({ ok: true, ...ws });
+    return NextResponse.json({ ok: true, signedIn: !!p, ...ws });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 502 });
   }

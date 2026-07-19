@@ -6,6 +6,7 @@ import { procureWork } from '@/app/lens/ledger/work';
 import { WORK_SCHEMA, type WorkError } from '@/app/lens/ledger/workTypes';
 import { getService, DEFAULT_SERVICE, policiesForService, type PolicyId } from '@/shared/services';
 import { fetchRunners, quorumFor } from '@/app/lens/ledger/runnerHealth';
+import { effectivePrincipal } from '@/app/lens/ledger/account';
 import { classifyLedgerError, LEDGER_WRITE_THROTTLED } from '@/shared/ledgerErrors';
 
 export const dynamic = 'force-dynamic';
@@ -55,8 +56,11 @@ export async function POST(req: Request) {
   const q = quorumFor(await fetchRunners(), serviceType);
   if (!q.quorum) return fail(`${serviceType} is supported by ${q.supported}/3 provider runners — not ready`, 503);
 
+  // The signed-in account's budget gates this job (else the global demo principal's).
+  const principalParty = (await effectivePrincipal()) || undefined;
+
   try {
-    const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource, policyId });
+    const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource, policyId, principalParty });
     return NextResponse.json(result);
   } catch (e: any) {
     const msg = String(e?.message || e);

@@ -2,7 +2,8 @@
 // revoke). A REAL on-ledger `SpendMandate` create as the principal. Flag-gated; throttle → 503.
 // Refuses if an active mandate already exists (top up that one instead of duplicating).
 import { NextResponse } from 'next/server';
-import { grantMandate, resolvePrincipalParty, resolveAgentParty, queryPrincipalMandates, mandateModeOn } from '@/app/lens/ledger/mandate';
+import { grantMandate, resolveAgentParty, queryPrincipalMandates, mandateModeOn } from '@/app/lens/ledger/mandate';
+import { effectivePrincipal } from '@/app/lens/ledger/account';
 import { classifyLedgerError, LEDGER_WRITE_THROTTLED } from '@/shared/ledgerErrors';
 
 export const dynamic = 'force-dynamic';
@@ -20,8 +21,8 @@ export async function POST(req: Request) {
   if (limit > MAX_GRANT) return NextResponse.json({ ok: false, error: `limit must be <= ${MAX_GRANT}` }, { status: 400 });
   const label = typeof body?.label === 'string' && body.label.trim() ? body.label.trim().slice(0, 80) : 'Standing procurement budget';
 
-  const principal = resolvePrincipalParty();
-  if (!principal) return NextResponse.json({ ok: false, error: 'no principal party configured' }, { status: 503 });
+  const principal = await effectivePrincipal();
+  if (!principal) return NextResponse.json({ ok: false, error: 'no account — create one first' }, { status: 409 });
 
   try {
     const now = new Date().toISOString();

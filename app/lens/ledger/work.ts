@@ -67,6 +67,9 @@ export interface WorkParams {
   buyerName?: string;
   requestSource?: 'browser' | 'mcp' | 'console';
   policyId?: PolicyId;
+  /** The signed-in account's principal party (mandate mode). Its budget gates this job;
+   *  absent ⇒ the global demo principal's mandate (pre-account behavior). */
+  principalParty?: string;
 }
 
 // The buyer's score recompute is now service-generic — each registered service
@@ -138,6 +141,10 @@ export async function procureWork(
   const mandateOn = mandateModeOn();
   let mandateAuthorizationCid = '';
   let mandateRemainingAfter: number | null = null;
+  // Multi-account: the buyer agent can observe EVERY principal's mandate, so a job must spend
+  // only the REQUESTING account's budget. Filter to the session principal (if signed in).
+  const forThisAccount = (ms: import('@/shared/mandate').MandateView[]) =>
+    params.principalParty ? ms.filter((m) => m.principal === params.principalParty) : ms;
 
   // Detect an existing Assignment up front: Assign CONSUMES the ActiveWorkRequest,
   // so on a replay we must NOT re-Open a duplicate request — we resume from here.
@@ -153,7 +160,7 @@ export async function procureWork(
       // writes — the request is never opened. (Real budget enforcement is the on-ledger
       // Authorize below; this is just an honest early refusal.)
       if (mandateOn) {
-        const mandates = await queryAgentMandates(buyer);
+        const mandates = forThisAccount(await queryAgentMandates(buyer));
         const pc = precheckMandate(mandates, params.maxBudget, params.serviceType, new Date().toISOString());
         if (pc.ok !== true) {
           const e = new Error(pc.reason) as Error & { code?: string };
@@ -215,11 +222,11 @@ export async function procureWork(
       const prior = findExistingAuthorization(priorAuths, params.jobId);
       if (prior) {
         mandateAuthorizationCid = prior.contractId;
-        const ms = await queryAgentMandates(buyer);
+        const ms = forThisAccount(await queryAgentMandates(buyer));
         const m = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
         mandateRemainingAfter = m ? m.remaining : null;
       } else {
-        const ms = await queryAgentMandates(buyer);
+        const ms = forThisAccount(await queryAgentMandates(buyer));
         const eligible = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
         if (!eligible) {
           const e = new Error('no eligible spending mandate at authorization time') as Error & { code?: string };
@@ -252,7 +259,7 @@ export async function procureWork(
     const prior = findExistingAuthorization(priorAuths, params.jobId);
     if (prior) {
       mandateAuthorizationCid = prior.contractId;
-      const ms = await queryAgentMandates(buyer);
+      const ms = forThisAccount(await queryAgentMandates(buyer));
       const m = pickEligibleMandate(ms, params.serviceType, new Date().toISOString());
       mandateRemainingAfter = m ? m.remaining : null;
     }

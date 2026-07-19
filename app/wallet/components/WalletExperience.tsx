@@ -9,7 +9,7 @@ import { SERVICE_META } from '../../work/types';
 
 interface Authorization { contractId: string; jobId: string; amount: number; serviceType: string; authorizedAtUtc: string }
 interface Mandate { contractId: string; label: string; currency: string; limit: number; remaining: number; spent: number; allowedServices: string[]; expiresAtUtc: string | null }
-interface Workspace { ok: boolean; enabled: boolean; ledgerReachable: boolean; principal: string | null; agent: string | null; mandate: Mandate | null; history: Authorization[]; packageId: string }
+interface Workspace { ok: boolean; enabled: boolean; ledgerReachable: boolean; signedIn?: boolean; principal: string | null; agent: string | null; mandate: Mandate | null; history: Authorization[]; packageId: string }
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 const short = (p: string | null) => (p ? `${p.split('::')[0]}::${(p.split('::')[1] || '').slice(0, 8)}…` : '—');
@@ -60,6 +60,8 @@ export function WalletExperience() {
 
   if (loading) return <Shell><div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 14 }}>Loading your workspace…</div></Shell>;
   if (fatal) return <Shell><Card><div style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 14 }}>{fatal}</div></Card></Shell>;
+  // New visitor with no account yet → onboarding (create their own Canton party + budget).
+  if (ws && ws.signedIn === false) return <Shell reduce={!!reduce}><CreateAccount onCreated={load} /></Shell>;
 
   const m = ws?.mandate || null;
   const pct = m && m.limit > 0 ? Math.max(0, Math.min(100, (m.remaining / m.limit) * 100)) : 0;
@@ -238,6 +240,59 @@ function CoinPanel() {
       <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>
         Honest scope: job settlement still moves a <span style={{ fontFamily: FONT.mono }}>USD.demo</span> voucher. This proves the real Canton Coin rail is wired on devnet; per-user CC custody and CC-denominated settlement are the roadmap.
       </p>
+    </div>
+  );
+}
+
+// First-run onboarding: a new visitor mints their OWN Canton party + starting budget.
+function CreateAccount({ onCreated }: { onCreated: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const create = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await fetch('/api/account/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initialBudget: 500 }) });
+      const j = await r.json();
+      if (r.ok && j?.ok) onCreated();
+      else if (j?.reason === 'LEDGER_WRITE_THROTTLED') setErr(j.error || 'Canton devnet is rate-limiting writes right now — try again shortly.');
+      else setErr(j?.error || `Could not create your account (HTTP ${r.status}).`);
+    } catch (e: any) { setErr(String(e?.message || e)); } finally { setBusy(false); }
+  };
+  const steps = [
+    { n: '1', t: 'You get a Canton identity', d: 'your own party on the devnet Global Synchronizer' },
+    { n: '2', t: 'And a private budget', d: 'a real on-ledger spending mandate only you control' },
+    { n: '3', t: 'Send your agent to work', d: 'it hires the market privately — and can’t overspend you' },
+  ];
+  return (
+    <div>
+      <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11.5, letterSpacing: '0.16em', textTransform: 'uppercase' }}>Get started · Canton devnet</div>
+      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.04 }}>Create your account on Canton.</h1>
+      <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>
+        One tap gives you a real identity and a private budget on the Canton devnet — your own contracts,
+        under your control. No wallet extension, no seed phrase: your keys are custodied by the validator,
+        the way Canton works.
+      </p>
+      <div className="material-clear mt-6 p-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {steps.map((s) => (
+            <div key={s.n} className="flex items-start gap-2.5">
+              <span className="tacit-num inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: C.violetSoft, color: C.violet, fontSize: 11 }}>{s.n}</span>
+              <div>
+                <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 600 }}>{s.t}</div>
+                <div style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12, lineHeight: 1.45 }}>{s.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button type="button" disabled={busy} onClick={create}
+            className="rounded-full px-6 py-3" style={{ background: busy ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: busy ? 'wait' : 'pointer', border: 'none' }}>
+            {busy ? 'Creating your account on Canton…' : 'Create my account →'}
+          </button>
+          <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>Free · devnet · starts with 500 demo credits</span>
+        </div>
+        {err && <div className="mt-3" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>{err}</div>}
+      </div>
     </div>
   );
 }
