@@ -1,5 +1,31 @@
 # Tacit — submission release candidate
 
+## Custodial per-user accounts + write-throttle retry (2026-07-19)
+
+Turned the app-treasury wallet into a **multi-user product**: each visitor mints their **own
+Canton party + on-ledger budget**, and there's a clear on-ramp.
+
+- **Custodial accounts (live).** `/wallet` shows a **"Create your account on Canton"** onboarding
+  for new visitors; one tap allocates their **own party** + grants an initial `SpendMandate` (their
+  budget), tracked by an **HMAC-signed session cookie** (can't be forged to another user's party).
+  Wallet reads/writes + procurement now act as the **session principal** (`effectivePrincipal`),
+  falling back to the global demo principal when signed out. `work.ts` spends only the **requesting
+  account's** mandate. **Verified live:** real account creation minted party
+  `TacitUsermrrzxvh6gi04fk::1220a14c…` + a 500-credit budget on devnet. Single writes, so it works
+  under the burst cap. Honest custody: **no self-custody browser wallet exists on Canton** — keys are
+  validator-custodied (neobank model), stated plainly in the UI.
+- **Clear MVP flow:** land → **Open your workspace** → **Create your account** → fund/manage budget +
+  real Canton Coin → **Send your agent to work** → verified result. Market/Lens are proof side-doors.
+- **Write-throttle retry.** Both submit paths (app + runner) now **retry the throttle-403 with
+  backoff** (a rejection is dedup-safe to retry). This smooths *intermittent* throttling. The current
+  devnet throttle is *sustained*, though — a full ~11-write job burst still 503s after the retry
+  budget, while single writes (account creation, top-up, CC tap) always succeed. The durable fix is
+  5North raising our credential's rate-limit or running our own validator; the honest `ThrottleView`
+  remains the graceful fallback.
+
+---
+
+
 ## User wallet + human-first product — a real person on Canton (2026-07-19)
 
 Turned "agents playing with demo credits" into a product a real user shows up and uses. The human
