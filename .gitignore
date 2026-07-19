@@ -76,3 +76,4 @@ runner/src/_taskPlanner.ts
 runner/src/_providerDecision.ts
 runner/src/_agentReconcile.ts
 .agent-journal/
+runner/src/_agentRun.ts

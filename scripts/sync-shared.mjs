@@ -22,6 +22,7 @@ const files = [
   { src: 'shared/taskPlanner.ts', dst: 'runner/src/_taskPlanner.ts' },
   { src: 'shared/providerDecision.ts', dst: 'runner/src/_providerDecision.ts' },
   { src: 'shared/agentReconcile.ts', dst: 'runner/src/_agentReconcile.ts' },
+  { src: 'shared/agentRun.ts', dst: 'runner/src/_agentRun.ts' },
 ];
 for (const { src, dst } of files) {
   let body = readFileSync(resolve(here, '..', src), 'utf8');

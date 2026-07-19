@@ -5,6 +5,7 @@ import { parseGoal, verifyEvidence, idempotencyKey } from '../runner/dist/_agent
 import { planTasks } from '../runner/dist/_taskPlanner.js';
 import { decide, quote } from '../runner/dist/_providerDecision.js';
 import { reconcile, spentFromSettlements, remainingBudget } from '../runner/dist/_agentReconcile.js';
+import { initRun, nextTask, applyResult, isComplete, finalize, spent, remaining } from '../runner/dist/_agentRun.js';
 
 let pass = 0;
 const ok = (m) => { console.log('  ✅ ' + m); pass++; };
@@ -131,6 +132,55 @@ const goal = (over = {}) => ({ decision: 'approve vendor.com for our checkout st
   assert.equal(idempotencyKey('run1', 't1-sec', 'open', 'v1'), idempotencyKey('run1', 't1-sec', 'open', 'v1'));
   assert.notEqual(idempotencyKey('run1', 't1-sec', 'open', 'v1'), idempotencyKey('run1', 't1-sec', 'award', 'v1'));
   ok('idempotency keys are stable per (run,task,action,policy) and distinct per action');
+}
+
+// ── RUNTIME — a stateful multi-task run: pick → procure → verify → aggregate ──
+{
+  const g = goal({ totalBudget: 100 });
+  const plan = planTasks(g, COST);
+  let s = initRun('run-x', g, plan);
+  assert.equal(s.tasks.length, 2, 'run holds a 2-task plan');
+  // drive the loop with a mock "procure+verify" (both succeed)
+  const decisions = { 't1-sec': 'approve_with_conditions', 't2-perf': 'approve' };
+  let guard = 0;
+  while (!isComplete(s) && guard++ < 10) {
+    const t = nextTask(s);
+    s = applyResult(s, t.taskId, { accepted: true, decision: decisions[t.taskId], spent: t.maxBudget - 4 });
+  }
+  assert.ok(isComplete(s), 'run completes when no affordable task remains');
+  const out = finalize(s);
+  assert.equal(out.decision, 'approve_with_conditions', 'aggregate = most-severe verified decision');
+  assert.equal(out.verifiedTasks, 2);
+  assert.ok(spent(s) <= g.totalBudget, 'total spend within budget');
+  ok(`RUNTIME — stateful 2-task run: plan → procure → verify → aggregate = ${out.decision} (spent ${spent(s)} of ${g.totalBudget})`);
+}
+
+// a failed REQUIRED task cannot silently upgrade the decision → human_review
+{
+  const g = goal({ needs: ['security'], totalBudget: 60 });
+  let s = initRun('run-y', g, planTasks(g, COST));
+  const t = nextTask(s);
+  // first attempt fails verification; retry also fails (bad digest)
+  s = applyResult(s, t.taskId, { accepted: false, decision: null, spent: 0 });
+  const t2 = nextTask(s); // retry (attempts < 2)
+  assert.ok(t2 && t2.taskId === t.taskId, 'a failed required task is retried within budget');
+  s = applyResult(s, t2.taskId, { accepted: false, decision: null, spent: 0 });
+  assert.ok(isComplete(s), 'run ends after retries exhausted');
+  const out = finalize(s);
+  assert.equal(out.decision, 'human_review', 'no verified evidence → human_review, never a fabricated approve');
+  ok('RUNTIME — a failed required task retries, then forces human_review (a failed provider never upgrades a decision)');
+}
+
+// budget stops a run: a second expensive task cannot exceed the mandate
+{
+  const g = goal({ totalBudget: 40 }); // security only fits
+  let s = initRun('run-z', g, planTasks(g, COST));
+  assert.equal(s.tasks.length, 1, 'tight budget planned a single task');
+  const t = nextTask(s);
+  s = applyResult(s, t.taskId, { accepted: true, decision: 'approve', spent: t.maxBudget });
+  assert.equal(nextTask(s), null, 'no further task can be afforded');
+  assert.ok(remaining(s) >= 0, 'never overspends the mandate');
+  ok('RUNTIME — budget ceiling ends the run cleanly; remaining never negative (mandate held end-to-end)');
 }
 
 console.log(`\n✅ all ${pass} Phase-2 real-agent proof groups passed`);
