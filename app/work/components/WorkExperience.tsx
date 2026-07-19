@@ -54,27 +54,30 @@ function FirstRunStrip() {
   );
 }
 
-// "What just happened" recap on the success view — closes the loop back to the economy.
+// Compact "What Tacit did" recap — four facts true of every completed private procurement.
 function SuccessRecap() {
-  const lines = [
-    'Three provider agents bid in sealed secrecy; the ledger hid every price from the others.',
-    'You awarded and paid the winner in one atomic Canton transaction; the report was delivered privately.',
-    'You re-hashed the bytes and recomputed the score to verify it; an auditor got a receipt — never the report.',
+  const items = [
+    { big: '3', t: 'agents competed', d: 'sealed bids' },
+    { big: '1', t: 'winner paid', d: 'atomically on Canton' },
+    { t: 'Report stayed private', d: 'you + the winner only' },
+    { t: 'Auditor got a receipt', d: 'never the report' },
   ];
   return (
     <div className="material-clear mt-8 p-5">
-      <div className="tacit-label" style={{ marginBottom: 8 }}>What just happened</div>
-      <ol className="flex flex-col gap-2">
-        {lines.map((l, i) => (
-          <li key={i} className="flex items-start gap-2.5">
-            <span className="tacit-num" style={{ color: C.violet, fontSize: 12, marginTop: 1 }}>{i + 1}</span>
-            <span style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13.5, lineHeight: 1.5 }}>{l}</span>
-          </li>
+      <div className="tacit-label" style={{ marginBottom: 12 }}>What Tacit did</div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+        {items.map((it, i) => (
+          <div key={i}>
+            <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>
+              {it.big && <span className="t-numeral" style={{ color: C.violet, fontSize: 20, marginRight: 5 }}>{it.big}</span>}{it.t}
+            </div>
+            <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12, marginTop: 2 }}>{it.d}</div>
+          </div>
         ))}
-      </ol>
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        <Link href="/market" className="no-underline" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 600 }}>Your job is now in the public feed — body sealed →</Link>
-        <Link href="/lens" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>See it from each party →</Link>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-4" style={{ borderTop: `1px solid ${C.hairline}`, paddingTop: 14 }}>
+        <Link href="/lens" className="no-underline" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 600 }}>See who could see what →</Link>
+        <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>View the live market →</Link>
       </div>
     </div>
   );
@@ -129,12 +132,12 @@ const newJobId = () => `vjob-${Date.now().toString(36)}-${Math.random().toString
 
 // Ledger-derived lifecycle stages (advanced ONLY by /api/work/status; no timers).
 const STAGES: { key: string; label: string }[] = [
-  { key: 'request_opened', label: 'Private request opened on Canton' },
-  { key: 'bids_received', label: 'Sealed provider bids received' },
-  { key: 'award_settled', label: 'Awarded + prepaid atomically' },
-  { key: 'assignment_created', label: 'Winner assigned the work' },
-  { key: 'delivery_received', label: 'Private delivery received' },
-  { key: 'receipt_created', label: 'Verified + receipt created' },
+  { key: 'request_opened', label: 'Private market opened' },
+  { key: 'bids_received', label: 'Three specialists responded' },
+  { key: 'award_settled', label: 'Winner selected & paid' },
+  { key: 'assignment_created', label: 'Work assigned privately' },
+  { key: 'delivery_received', label: 'Work delivered privately' },
+  { key: 'receipt_created', label: 'Verified · compliance receipt written' },
 ];
 // Agent-voiced narration keyed DETERMINISTICALLY to real stage transitions (no LLM).
 const NARRATION: Record<string, string> = {
@@ -338,7 +341,7 @@ export function WorkExperience() {
           <WorkResultView result={result} runners={runnersAtRun.current.length ? runnersAtRun.current : health?.runners || []} />
           <SuccessRecap />
           <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
-            <NewButton onClick={startNew} label="New assessment" />
+            <NewButton onClick={startNew} label="Run another private request" />
           </div>
         </div>
       )}
@@ -524,7 +527,7 @@ function MandateCard({ proposal, onApprove, onRestart, ready }: any) {
   );
 }
 
-function ManualPane({ health, setMode, url, setUrl, budget, setBudget, serviceType, chooseService, policyId, setPolicyId, onRunManual, ready }: any) {
+function ManualPane({ health, url, setUrl, budget, setBudget, serviceType, chooseService, policyId, setPolicyId, onRunManual, ready }: any) {
   const httpsOk = /^https:\/\//i.test(url.trim());
   const canRun = ready && httpsOk && budget > 0;
   const meta = SERVICE_META[serviceType] || SERVICE_META[DEFAULT_SVC];

@@ -152,6 +152,24 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
           </div>
         )}
         {policy && <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>{policy.statement}</p>}
+        {/* Outcome summary — the three facts a decision-maker needs, above the technical proof. */}
+        <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2.5 pt-3.5 sm:grid-cols-3" style={{ borderTop: `1px solid ${C.hairline}` }}>
+          <div>
+            <div className="tacit-label">Winning specialist</div>
+            <div style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, fontWeight: 600 }}>{result.winner.providerLabel}</div>
+          </div>
+          <div>
+            <div className="tacit-label">Spent</div>
+            <div style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 14 }}>
+              {result.amount} {result.currency}
+              {ev.mandateRemaining != null && <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}> · {ev.mandateRemaining} left in budget</span>}
+            </div>
+          </div>
+          <div>
+            <div className="tacit-label">Delivery</div>
+            <div style={{ color: bv?.verified ? C.live : C.fallback, fontFamily: FONT.sans, fontSize: 14, fontWeight: 600 }}>{bv?.verified ? 'Independently verified' : 'Verification pending'}</div>
+          </div>
+        </div>
       </Card>
 
       {/* ── 2) PRIVATE ASSESSMENT ────────────────────────────────────── */}
@@ -255,9 +273,14 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
         </div>
       </Card>
 
-      {/* ── 5) DELIVERY VERIFICATION ─────────────────────────────────── */}
+      {/* ── 5) ON-LEDGER PROOF — collapsed; decision-makers see the verdict, not hashes ── */}
       <Card>
-        <SectionTitle kicker="private delivery + independent buyer verification">Proof of delivery</SectionTitle>
+        <details className="tacit-disclosure">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 15, fontWeight: 600 }}>On-ledger proof</span>
+          <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11 }}>hashes · contracts · verification ▾</span>
+        </summary>
+        <div className="mt-4">
         <div className="mb-3 flex flex-wrap gap-2">
           {[['hash', bv.hashOk], ['length', bv.lengthOk], ['schema', bv.schemaOk], ['target binding', bv.bindingOk], ['score', bv.scoreOk]].map(([label, ok]) => (
             <span key={label as string} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: C.surface, border: `1px solid ${C.hairline}`, fontFamily: FONT.mono, fontSize: 11, color: C.ink2 }}>
@@ -300,6 +323,8 @@ export function WorkResultView({ result, runners }: { result: WorkResult; runner
           </p>
         )}
         <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>Canton proves who can see what, that payment happened, and that a commitment was made. The buyer independently recomputes the hash and validates the schema, target and score off-ledger. Canton does not verify SHA-256 or report correctness.</p>
+        </div>
+        </details>
       </Card>
 
       {/* ── 6) PRIVACY LENS ──────────────────────────────────────────── */}

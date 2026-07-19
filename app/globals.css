@@ -295,3 +295,7 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Progressive-disclosure summaries (On-ledger proof, etc.) — hide the default marker. */
+details.tacit-disclosure > summary { list-style: none; }
+details.tacit-disclosure > summary::-webkit-details-marker { display: none; }
