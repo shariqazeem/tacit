@@ -215,31 +215,35 @@ function CoinPanel() {
       else setNote({ ok: false, text: j?.error || `Tap failed (HTTP ${r.status}).` });
     } catch (e: any) { setNote({ ok: false, text: String(e?.message || e) }); } finally { setBusy(false); }
   };
+  // Demoted: settlement uses USD.demo, so the real-CC rail is an honest EXPERIMENTAL disclosure,
+  // not a headline balance that competes with the budget.
   return (
-    <div className="material-clear mt-5 p-6" style={{ borderColor: 'rgba(13,148,136,0.22)' }}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="tacit-label" style={{ color: C.live }}>Real Canton Coin · devnet · Splice Amulet</span>
-        {c.round != null && <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>round {c.round}</span>}
-      </div>
-      <div className="mt-3 flex items-baseline gap-2">
-        <span style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(34px, 6vw, 50px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{fmt(c.unlocked)}</span>
-        <span style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15 }}>CC available</span>
-      </div>
-      <p className="mt-3" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.55, maxWidth: '58ch' }}>
-        The network’s native asset, held in this validator’s onboarded wallet on the devnet Global Synchronizer.
-        The <span style={{ fontFamily: FONT.mono }}>tap</span> below mints real Canton Coin from the devnet faucet.
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" disabled={busy} onClick={tap}
-          className="rounded-full px-5 py-2" style={{ background: busy ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 13.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer', border: 'none' }}>
-          {busy ? 'Tapping the faucet…' : 'Tap 10 devnet CC →'}
-        </button>
-        {c.partyId && <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>{c.partyId.split('::')[0]}::{(c.partyId.split('::')[1] || '').slice(0, 8)}…</span>}
-      </div>
-      {note && <div className="mt-3" style={{ color: note.ok ? C.live : '#B02A2A', fontFamily: FONT.sans, fontSize: 12.5 }}>{note.ok ? '✓ ' : ''}{note.text}</div>}
-      <p className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5, lineHeight: 1.5 }}>
-        Honest scope: job settlement still moves a <span style={{ fontFamily: FONT.mono }}>USD.demo</span> voucher. This proves the real Canton Coin rail is wired on devnet; per-user CC custody and CC-denominated settlement are the roadmap.
-      </p>
+    <div className="material-clear mt-5 p-5">
+      <details className="tacit-disclosure">
+        <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3">
+          <span>
+            <span className="tacit-label" style={{ color: C.ink2 }}>Experimental network rail</span>
+            <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}> · real Canton Coin, not the settlement asset</span>
+          </span>
+          <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11 }}>{fmt(c.unlocked)} CC ▾</span>
+        </summary>
+        <div className="mt-4">
+          <div className="flex items-baseline gap-2">
+            <span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(c.unlocked)}</span>
+            <span style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13.5 }}>CC available{c.round != null ? ` · round ${c.round}` : ''}</span>
+          </div>
+          <p className="mt-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12.5, lineHeight: 1.55, maxWidth: '58ch' }}>
+            The network’s native asset, held in this validator’s onboarded wallet on devnet. The tap mints real Canton Coin from the faucet — proof the CC rail is wired. <strong>Job settlement still moves a <span style={{ fontFamily: FONT.mono }}>USD.demo</span> voucher;</strong> per-user CC custody and CC-denominated settlement are the roadmap.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button type="button" disabled={busy} onClick={tap}
+              className="rounded-full px-4 py-1.5" style={{ background: busy ? 'rgba(10,10,11,0.28)' : C.surface, color: C.ink, border: `1px solid ${C.hairline}`, fontFamily: FONT.sans, fontSize: 12.5, fontWeight: 500, cursor: busy ? 'wait' : 'pointer' }}>
+              {busy ? 'Tapping the faucet…' : 'Tap 10 devnet CC'}
+            </button>
+            {note && <span style={{ color: note.ok ? C.live : '#B02A2A', fontFamily: FONT.sans, fontSize: 12 }}>{note.ok ? '✓ ' : ''}{note.text}</span>}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
