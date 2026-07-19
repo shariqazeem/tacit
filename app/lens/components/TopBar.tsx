@@ -7,10 +7,8 @@ import { C, FONT, glassBlur } from './theme';
 import { SourceBadge } from './SourceBadge';
 
 const NAV = [
-  { href: '/wallet', label: 'Wallet' },
-  { href: '/work', label: 'Work' },
-  { href: '/market', label: 'Market' },
-  { href: '/lens', label: 'Lens' },
+  { href: '/#how', label: 'How it works' },
+  { href: '/market', label: 'Live proof' },
 ] as const;
 
 /**
@@ -67,22 +65,19 @@ export function TopBar({
         {right ? (
           right
         ) : (
-          <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
+          <nav className="flex items-center gap-1 sm:gap-2.5" aria-label="Primary">
             {NAV.map((n) => {
-              const active = pathname === n.href || !!pathname?.startsWith(n.href + '/');
               return (
                 <Link
                   key={n.href}
                   href={n.href}
-                  aria-current={active ? 'page' : undefined}
-                  className="rounded-full px-3 py-1.5 no-underline"
+                  className="hidden rounded-full px-2.5 py-1.5 no-underline sm:inline-block"
                   style={{
                     fontFamily: FONT.sans,
                     fontSize: 13.5,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? C.ink : C.ink2,
-                    background: active ? 'rgba(10,10,11,0.05)' : 'transparent',
-                    transition: 'color 0.18s var(--micro-ease), background 0.18s var(--micro-ease)',
+                    fontWeight: 500,
+                    color: C.ink2,
+                    transition: 'color 0.18s var(--micro-ease)',
                   }}
                 >
                   {n.label}
@@ -91,6 +86,12 @@ export function TopBar({
             })}
             <span className="mx-0.5 hidden h-4 w-px sm:inline-block" style={{ background: C.hairline }} aria-hidden />
             <ReadinessDot />
+            {/* The single clear action, everywhere. */}
+            {pathname !== '/work' && (
+              <Link href="/work" className="ml-1 rounded-full px-3.5 py-1.5 no-underline" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 13, fontWeight: 500 }}>
+                Run a private assessment
+              </Link>
+            )}
             {showControls && (
               <span className="tacit-glass ml-1 flex items-center gap-1.5 rounded-full py-1 pl-2.5 pr-1" style={{ ...glassBlur, boxShadow: '0 1px 2px rgba(10,10,11,0.04)' }}>
                 {source && <SourceBadge source={source} />}

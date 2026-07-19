@@ -26,26 +26,27 @@ export function Hero() {
       <div className="relative z-10 mx-auto w-full max-w-5xl px-0 sm:px-2">
         <div className="max-w-3xl">
           <div className="tacit-rise mb-6 flex flex-wrap items-center gap-2" style={{ animationDelay: '0.02s' }}>
-            <span className="text-[11px] font-medium uppercase tracking-[0.18em]" style={{ color: C.ink3, fontFamily: FONT.mono }}>Private work exchange</span>
+            <span className="text-[11px] font-medium uppercase tracking-[0.18em]" style={{ color: C.ink3, fontFamily: FONT.mono }}>Private procurement on Canton</span>
             <span style={{ color: C.ink3 }} aria-hidden>·</span>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.live, fontFamily: FONT.mono }}>
               <span className="tacit-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: C.live }} />
-              On Canton
+              Devnet live
             </span>
           </div>
 
           <h1 className="t-display tacit-rise" style={{ color: C.ink, animationDelay: '0.08s' }}>
-            Your AI agent hires a private market —
+            Give your AI agent a budget.
             <br />
-            on a budget you control.
+            It hires the best specialist—privately.
           </h1>
 
-          <p className="tacit-rise mt-6 text-[16px] leading-relaxed" style={{ color: C.ink2, fontFamily: FONT.sans, maxWidth: '60ch', animationDelay: '0.14s' }}>
-            You’re a party on Canton. You grant your procurement agent a private, on-ledger budget;
-            it posts your goal as a sealed request, three provider agents bid in secret, the winner is
-            awarded and paid atomically, delivers privately — and the ledger itself refuses any spend
-            beyond what you set. An auditor receives a receipt, never the report. Privacy and your
-            budget are properties of the ledger, not promises of the app.
+          <p className="tacit-rise mt-6 text-[17px] leading-relaxed" style={{ color: C.ink2, fontFamily: FONT.sans, maxWidth: '56ch', animationDelay: '0.14s' }}>
+            Set a ledger-enforced mandate, let specialist agents submit sealed bids, and receive verified
+            work — while the auditor sees only the receipt.
+          </p>
+          <p className="tacit-rise mt-3 text-[14.5px] leading-relaxed" style={{ color: C.ink3, fontFamily: FONT.sans, maxWidth: '56ch', animationDelay: '0.17s' }}>
+            The first job: <span style={{ color: C.ink2 }}>privately vet a software vendor before you approve them</span> — without
+            exposing the vendor, the bids, or your budget.
           </p>
 
           <div className="tacit-rise mt-9 flex flex-wrap items-center gap-5" style={{ animationDelay: '0.2s' }}>
@@ -56,12 +57,12 @@ export function Hero() {
               className="inline-block rounded-full"
               style={{ willChange: 'transform' }}
             >
-              <Link href="/wallet" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}>
-                Open your workspace
+              <Link href="/work" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}>
+                Run a private assessment
                 <span aria-hidden style={{ fontSize: 12 }}>→</span>
               </Link>
             </motion.span>
-            <Link href="/work" className="text-[15px] font-medium no-underline" style={{ color: C.ink2, fontFamily: FONT.sans }}>Run a live assessment →</Link>
+            <Link href="/market" className="text-[15px] font-medium no-underline" style={{ color: C.ink2, fontFamily: FONT.sans }}>See a completed Devnet run →</Link>
             <button type="button" onClick={toHow} className="text-[15px] font-medium" style={{ color: C.ink3, fontFamily: FONT.sans }}>How it works ↓</button>
           </div>
         </div>

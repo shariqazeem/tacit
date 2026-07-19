@@ -47,30 +47,25 @@ export function LiveStrip() {
   // Graceful hide: nothing rendered until real data arrives; nothing if it never does.
   if (dead || !d) return null;
 
-  const cells = [
-    { k: 'Completed jobs', v: fmt(d.totals.completedJobs) },
-    { k: 'Total volume', v: `${fmt(d.totals.totalVolume)}`, unit: 'demo credits' },
-    { k: 'Capable agents', v: `${d.meta.capableAgents.ready}/${d.meta.capableAgents.total}` },
-    { k: 'Services live', v: fmt(d.meta.servicesLive) },
-  ];
+  const ready = d.meta.capableAgents.ready;
+  const Dot = () => <span aria-hidden style={{ color: C.ink3, opacity: 0.5 }}>·</span>;
 
+  // Restrained inline proof — real ledger figures, no card clutter.
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 sm:px-8">
-      <div className="material-clear" style={{ padding: 0 }}>
-        <div className="grid grid-cols-2 sm:grid-cols-4" role="group" aria-label="Live market figures" aria-live="polite">
-          {cells.map((c, i) => (
-            <div key={c.k} className="px-5 py-4" style={{ borderRight: i % 4 !== 3 ? `1px solid ${C.hairline}` : undefined, borderBottom: i < 2 ? `1px solid ${C.hairline}` : undefined }}>
-              <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>{c.k}</div>
-              <div className="t-numeral mt-0.5" style={{ color: C.ink, fontSize: 24, lineHeight: 1.1 }}>{c.v}</div>
-              {c.unit && <div style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 10.5 }}>{c.unit}</div>}
-            </div>
-          ))}
-        </div>
+    <div className="mx-auto w-full max-w-5xl px-6 sm:px-8" role="group" aria-label="Live Canton Devnet proof" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2" style={{ fontFamily: FONT.sans, fontSize: 13 }}>
+        <span className="inline-flex items-center gap-1.5" style={{ color: C.live, fontFamily: FONT.mono, fontSize: 11.5, fontWeight: 600 }}>
+          <span className="tacit-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: C.live }} aria-hidden />
+          Canton Devnet live
+        </span>
+        <Dot />
+        <span style={{ color: C.ink2 }}><strong style={{ color: C.ink, fontFamily: FONT.mono }}>{ready}</strong> specialist agents online</span>
+        <Dot />
+        <span style={{ color: C.ink2 }}><strong style={{ color: C.ink, fontFamily: FONT.mono }}>{fmt(d.totals.completedJobs)}</strong> completed jobs</span>
+        <Dot />
+        <span style={{ color: C.ink2 }}>Daml-enforced budgets</span>
       </div>
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className="tacit-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: C.live }} aria-hidden />
-        <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11 }}>live from the auditor’s ledger view · {fmtTime(d.asOfUtc)}</span>
-      </div>
+      <div className="mt-2" style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>live from the auditor’s ledger view · {fmtTime(d.asOfUtc)}</div>
     </div>
   );
 }

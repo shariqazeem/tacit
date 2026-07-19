@@ -16,10 +16,11 @@ const DEFAULT_SVC = 'vendor_security_assessment';
 // Zero-typing example goals — span both services and both policy families. Tapping
 // one fills the composer; the user reviews and submits. The LLM infers the service
 // and policy from the plain-English wording.
+// Business-OUTCOME examples (not backend service names). Each maps to a real service.
 const EXAMPLE_GOALS: { label: string; goal: string }[] = [
-  { label: 'Onboard a vendor · strict infra', goal: "We're onboarding acme-corp.com as a vendor — strict about infrastructure, budget 60." },
-  { label: 'Is it fast enough? · standard SLO', goal: 'Is example.com fast enough for launch? Standard SLO, budget 40.' },
-  { label: 'Quick security pre-screen', goal: 'Quick security pre-screen of example.com before we integrate, budget 50.' },
+  { label: 'Assess a software vendor', goal: 'Before we approve acme-corp.com as a vendor, privately check its public security posture — strict about infrastructure. Spend no more than 60 credits.' },
+  { label: 'Check checkout performance', goal: 'Is example.com fast enough to launch checkout on? Standard latency SLO, budget 40.' },
+  { label: 'Verify a site before launch', goal: 'Quick security pre-screen of example.com before we integrate, budget 50.' },
 ];
 
 // First-run three-step explainer, dismissible + remembered in localStorage.
@@ -173,8 +174,35 @@ export function WorkExperience() {
   const [uncertain, setUncertain] = useState(false);
   const [restored, setRestored] = useState(false);
   const [stages, setStages] = useState<Record<string, boolean>>({});
+  // Account (session) + the account's budget — for inline onboarding + the header budget pill.
+  const [account, setAccount] = useState<{ signedIn: boolean; party: string | null } | null>(null);
+  const [ws, setWs] = useState<{ remaining: number; limit: number; currency: string } | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createErr, setCreateErr] = useState('');
   const runnersAtRun = useRef<RunnerHealth[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadAccount = useCallback(async () => {
+    try {
+      const [a, w] = await Promise.all([
+        fetch('/api/account', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/wallet', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      setAccount(a?.ok ? { signedIn: !!a.signedIn, party: a.party ?? null } : { signedIn: false, party: null });
+      setWs(w?.ok && w.mandate ? { remaining: w.mandate.remaining, limit: w.mandate.limit, currency: w.mandate.currency } : null);
+    } catch { setAccount({ signedIn: false, party: null }); }
+  }, []);
+
+  const createAccount = useCallback(async () => {
+    setCreating(true); setCreateErr('');
+    try {
+      const r = await fetch('/api/account/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initialBudget: 500 }) });
+      const j = await r.json();
+      if (r.ok && j?.ok) await loadAccount();
+      else if (j?.reason === 'LEDGER_WRITE_THROTTLED') setCreateErr(j.error || 'Canton devnet is rate-limiting writes right now — try again shortly.');
+      else setCreateErr(j?.error || `Could not create your workspace (HTTP ${r.status}).`);
+    } catch (e: any) { setCreateErr(String(e?.message || e)); } finally { setCreating(false); }
+  }, [loadAccount]);
 
   const loadHealth = useCallback(async () => {
     try {
@@ -186,6 +214,7 @@ export function WorkExperience() {
   }, []);
 
   useEffect(() => { loadHealth(); if (phase !== 'idle') return; const t = setInterval(loadHealth, 6000); return () => clearInterval(t); }, [loadHealth, phase]);
+  useEffect(() => { loadAccount(); }, [loadAccount]);
 
   useEffect(() => {
     try {
@@ -240,6 +269,7 @@ export function WorkExperience() {
       if (!r.ok || !data?.ok) { setError(String(data?.error || `request failed (HTTP ${r.status})`)); setErrorReason(String(data?.reason || '')); setPhase('error'); return; }
       const wr = data as WorkResult;
       setResult(wr);
+      loadAccount(); // refresh the header budget pill after a spend
       if (wr.artifact.available) {
         try { sessionStorage.setItem(STORE_KEY, JSON.stringify({ jobId: id, url, maxBudget: budget, policyId, result: wr, savedAtUtc: new Date().toISOString() } as StoredRun)); } catch { /* ignore */ }
         setPhase('success');
@@ -251,7 +281,7 @@ export function WorkExperience() {
       setError(aborted ? 'The request timed out in the browser — the ledger job may still have completed.' : String(e?.message || e));
       setPhase('error');
     } finally { clearTimeout(timer); }
-  }, [url, budget, policyId, serviceType, health]);
+  }, [url, budget, policyId, serviceType, health, loadAccount]);
 
   const plan = useCallback(async () => {
     if (goalText.trim().length < 4) return;
@@ -290,6 +320,7 @@ export function WorkExperience() {
       {phase === 'idle' && (
         <ConsoleIdle
           reduce={!!reduce} health={health} mode={mode} setMode={setMode}
+          account={account} ws={ws} creating={creating} createErr={createErr} onCreateAccount={createAccount}
           agentStep={agentStep} goalText={goalText} setGoalText={setGoalText} onPlan={plan} planError={planError}
           proposal={proposal}
           onApprove={() => run(undefined, 'console')}
@@ -319,45 +350,98 @@ export function WorkExperience() {
   );
 }
 
-// ── idle: Agent console (default) + Manual form ─────────────────────────────
+// A compact remaining-budget pill in the workspace header → links to /wallet.
+function BudgetPill({ remaining, limit }: { remaining: number; limit: number }) {
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return (
+    <Link href="/wallet" className="no-underline inline-flex items-center gap-2 rounded-full px-3 py-1.5" style={{ background: C.violetSoft, border: `1px solid rgba(124,58,237,0.2)` }} title="Your ledger-enforced budget · manage in Wallet">
+      <span style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Budget</span>
+      <span style={{ color: C.ink, fontFamily: FONT.mono, fontSize: 13, fontWeight: 600 }}>{fmt(remaining)}</span>
+      <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>/ {fmt(limit)} credits</span>
+    </Link>
+  );
+}
+
+// Inline first-run: mint the user's own Canton identity + budget WITHOUT leaving /work.
+function CreateWorkspace({ creating, err, onCreate, ready }: { creating: boolean; err: string; onCreate: () => void; ready: boolean }) {
+  return (
+    <div className="mt-8">
+      <div className="material-clear p-6" style={{ maxWidth: 620 }}>
+        <div className="tacit-label" style={{ color: C.violet, marginBottom: 8 }}>Create your private workspace</div>
+        <p style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15, lineHeight: 1.6 }}>
+          You’ll get a <strong style={{ color: C.ink }}>Canton identity</strong> and a{' '}
+          <strong style={{ color: C.ink }}>ledger-enforced spending boundary</strong> your AI agent can’t exceed.
+          No wallet extension, no seed phrase.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button type="button" disabled={creating} onClick={onCreate}
+            className="rounded-full px-6 py-3" style={{ background: creating ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: creating ? 'wait' : 'pointer', border: 'none' }}>
+            {creating ? 'Creating your workspace on Canton…' : 'Create workspace →'}
+          </button>
+          <span style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12.5 }}>Free · Devnet · 500 demo credits</span>
+        </div>
+        {err && <div className="mt-3" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>{err}</div>}
+        {!ready && !err && <div className="mt-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>Tip: the provider network needs to be live before a job can run — your workspace is created either way.</div>}
+        <details className="mt-4">
+          <summary style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12, cursor: 'pointer' }}>How identity works on Canton</summary>
+          <p className="mt-2" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12, lineHeight: 1.55 }}>
+            Your identity is a Canton <em>party</em>. On a hosted validator the keys are custodied for you
+            (neobank-style) — Canton has no browser self-custody wallet. Your budget is a real
+            <span style={{ fontFamily: FONT.mono }}> SpendMandate</span> contract only you can top up or revoke.
+          </p>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+// ── idle: one workspace — onboarding OR the request composer ─────────────────
 function ConsoleIdle(p: any) {
-  const { reduce, health, mode, setMode, serviceType } = p;
+  const { reduce, health, serviceType, account, ws, creating, createErr, onCreateAccount } = p;
   const q = health?.serviceQuorum?.[serviceType];
   const ready = !!health?.ledgerReachable && (q?.quorum ?? false);
   const online = q?.supported ?? 0;
+  const signedIn = account?.signedIn === true;
+  const [advanced, setAdvanced] = useState(false);
+
   return (
     <motion.div initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-      <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11.5, letterSpacing: '0.16em', textTransform: 'uppercase' }}>Buyer agent console · Canton devnet</div>
-      <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.03 }}>Tell your procurement agent what you need.</h1>
-      <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>Describe the work in plain English. The agent proposes a mandate you approve — then three provider agents bid privately, the winner performs the work, findings stay private, and a deterministic policy decides. The agent never invents findings or prices.</p>
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        <StatChip label={health ? (health.ledgerReachable ? 'Canton devnet' : 'Canton unreachable') : 'Checking…'} tone={health?.ledgerReachable ? 'live' : 'warn'} />
-        <StatChip label={`${online}/3 capable agents`} tone={online >= 3 ? 'live' : 'warn'} />
-        <StatChip label={`${SERVICE_META[serviceType]?.label ?? serviceType}`} tone={ready ? 'live' : 'neutral'} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11.5, letterSpacing: '0.16em', textTransform: 'uppercase' }}>Private procurement · Canton devnet</div>
+        {signedIn && ws && <BudgetPill remaining={ws.remaining} limit={ws.limit} />}
       </div>
 
-      <FirstRunStrip />
-      <StandingMandatePanel />
+      {!signedIn ? (
+        <>
+          <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.03 }}>Give your agent a budget. It hires the best specialist.</h1>
+          <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '56ch' }}>Start with a private workspace on Canton — your identity and a spending boundary your agent can’t exceed. Takes one tap.</p>
+          <CreateWorkspace creating={creating} err={createErr} onCreate={onCreateAccount} ready={ready} />
+        </>
+      ) : (
+        <>
+          <h1 className="mt-3" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 'clamp(28px, 4.5vw, 42px)', fontWeight: 500, letterSpacing: '-0.02em', lineHeight: 1.04 }}>What do you need to decide?</h1>
+          <p className="mt-4" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 15.5, lineHeight: 1.6, maxWidth: '58ch' }}>Describe the outcome in plain English. Your agent proposes a mandate you approve <strong>once</strong> — then specialist agents bid privately, the winner performs the work, findings stay private, and a deterministic policy returns the decision. The agent never invents findings or prices.</p>
 
-      {/* tabs */}
-      <div className="mt-6 inline-flex rounded-full p-1" role="tablist" aria-label="Console mode" style={{ background: 'rgba(10,10,11,0.04)', border: `1px solid ${C.hairline}` }}>
-        {(['agent', 'manual'] as Mode[]).map((m) => (
-          <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
-            className="rounded-full px-4 py-1.5" style={{ fontFamily: FONT.sans, fontSize: 13, fontWeight: 500, cursor: 'pointer', color: mode === m ? '#fff' : C.ink2, background: mode === m ? C.ink : 'transparent', border: 'none' }}>
-            {m === 'agent' ? 'Agent' : 'Manual'}
-          </button>
-        ))}
-      </div>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <StatChip label={health ? (health.ledgerReachable ? 'Canton devnet' : 'Canton unreachable') : 'Checking…'} tone={health?.ledgerReachable ? 'live' : 'warn'} />
+            <StatChip label={`${online}/3 specialist agents online`} tone={online >= 3 ? 'live' : 'warn'} />
+          </div>
 
-      {mode === 'agent' ? <AgentPane {...p} ready={ready} /> : <ManualPane {...p} ready={ready} />}
+          <AgentPane {...p} ready={ready} />
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11.5 }}>Devnet verified · no fallback</span>
-        <Link href="/lens" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>Inspect ledger privacy →</Link>
-        <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>Live market →</Link>
-      </div>
-      <ByoAgentFooter url={p.url} budget={p.budget} policyId={p.policyId} />
+          <div className="mt-5">
+            <button type="button" onClick={() => setAdvanced((v) => !v)} className="text-[13px] font-medium" style={{ color: C.ink2, fontFamily: FONT.sans }}>Advanced: configure manually {advanced ? '▲' : '▼'}</button>
+            {advanced && <ManualPane {...p} ready={ready} />}
+          </div>
+
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 11.5 }}>Devnet verified · no fallback</span>
+            <Link href="/market" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>Live proof →</Link>
+            <Link href="/lens" className="no-underline" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13 }}>How privacy works →</Link>
+          </div>
+          <ByoAgentFooter url={p.url} budget={p.budget} policyId={p.policyId} />
+        </>
+      )}
     </motion.div>
   );
 }
@@ -366,12 +450,12 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
   if (agentStep === 'mandate' && proposal) return <MandateCard proposal={proposal} onApprove={onApprove} onEditManual={onEditManual} onRestart={onRestartAgent} ready={ready} />;
   return (
     <Card style={{ marginTop: 16 }}>
-      <label htmlFor="goal" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Your goal</label>
+      <label htmlFor="goal" style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Describe the outcome you need</label>
       <textarea id="goal" value={goalText} onChange={(e) => setGoalText(e.target.value)} rows={3} maxLength={2000}
         aria-describedby="goal-hint" disabled={agentStep === 'planning'}
-        placeholder="We're onboarding acme.com as a vendor next week — vet them, budget 100, we're strict about infrastructure."
+        placeholder="Before we approve acme.com as a vendor, privately check its security posture. Spend no more than 60 credits."
         className="mt-1.5 w-full resize-none rounded-xl px-3.5 py-2.5" style={{ background: C.bg, border: `1px solid ${C.hairline}`, color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.5, outlineColor: C.violet }} />
-      <div id="goal-hint" className="mt-1.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>The agent turns this into a mandate you approve. Nothing is spent until you approve.</div>
+      <div id="goal-hint" className="mt-1.5" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 11.5 }}>Your agent turns this into a mandate you approve. Nothing is spent until you approve.</div>
       {agentStep !== 'planning' && (
         <div className="mt-3">
           <div className="tacit-label" style={{ marginBottom: 6 }}>Or tap an example</div>
@@ -389,7 +473,7 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button type="button" onClick={onPlan} disabled={agentStep === 'planning' || goalText.trim().length < 4}
           className="rounded-full px-6 py-3" style={{ background: agentStep === 'planning' || goalText.trim().length < 4 ? 'rgba(10,10,11,0.28)' : C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: agentStep === 'planning' ? 'wait' : 'pointer' }}>
-          {agentStep === 'planning' ? 'Planning…' : 'Plan the mandate →'}
+          {agentStep === 'planning' ? 'Preparing…' : 'Prepare private request →'}
         </button>
         {agentStep === 'planning' && <span aria-live="polite" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12.5 }}>Reading your goal and drafting a mandate — this can take up to a minute on a busy model.</span>}
         {agentStep !== 'planning' && !ready && <span style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12.5 }}>Provider network not ready — you can still plan, but approval waits for 3 agents.</span>}
@@ -399,26 +483,27 @@ function AgentPane({ agentStep, goalText, setGoalText, onPlan, planError, propos
   );
 }
 
-function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: any) {
+function MandateCard({ proposal, onApprove, onRestart, ready }: any) {
   const policyLabel = POLICY_META.find((x: any) => x.id === proposal.policyId)?.label ?? proposal.policyId;
   return (
     <Card style={{ marginTop: 16, borderColor: 'rgba(124,58,237,0.28)' }}>
       <div className="flex items-center justify-between">
-        <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Proposed mandate · approve to proceed</div>
+        <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase' }}>Agent plan · approve to start</div>
         <Sealed label="Unsigned" />
       </div>
-      <div className="mt-1.5" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 27, fontWeight: 500, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Your agent proposes</div>
+      <div className="mt-1.5" style={{ color: C.ink, fontFamily: FONT.display, fontSize: 26, fontWeight: 500, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Here’s what your agent will do</div>
       <div className="mb-4 mt-3 h-px w-full" style={{ background: C.hairline }} aria-hidden />
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-        <Row label="Service">{SERVICE_META[proposal.serviceType]?.label ?? proposal.serviceType}</Row>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 sm:grid-cols-3">
         <Row label="Target" mono>{proposal.input.url}</Row>
-        <Row label="Policy">{policyLabel}</Row>
-        <Row label="Max budget" mono>{proposal.maxBudget} <span style={{ color: C.ink3 }}>demo credits — devnet voucher</span></Row>
-        {proposal.confidence != null && <Row label="Confidence" mono>{Math.round(proposal.confidence * 100)}%</Row>}
+        <Row label="Work purchased">{SERVICE_META[proposal.serviceType]?.label ?? proposal.serviceType}</Row>
+        <Row label="Acceptance policy">{policyLabel}</Row>
+        <Row label="Maximum spend" mono>{proposal.maxBudget} <span style={{ color: C.ink3 }}>USD.demo</span></Row>
+        <Row label="Who can see it">You + the winner</Row>
+        <Row label="Auditor sees">Receipt only</Row>
       </div>
       {proposal.assumptions?.length > 0 && (
         <div className="mt-3">
-          <div style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Agent's assumptions</div>
+          <div style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Agent’s assumptions</div>
           <ul className="mt-1.5 flex flex-col gap-1">
             {proposal.assumptions.map((a: string, i: number) => (
               <li key={i} className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 12.5 }}><span aria-hidden style={{ color: C.violet }}>·</span>{a}</li>
@@ -426,13 +511,15 @@ function MandateCard({ proposal, onApprove, onEditManual, onRestart, ready }: an
           </ul>
         </div>
       )}
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={onApprove} disabled={!ready}
-          className="rounded-full px-6 py-3" style={{ background: ready ? C.ink : 'rgba(10,10,11,0.28)', color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: ready ? 'pointer' : 'not-allowed' }}>Approve mandate →</button>
-        <button type="button" onClick={onEditManual} className="text-[14px] font-medium" style={{ color: C.ink2, fontFamily: FONT.sans }}>Edit manually</button>
-        <button type="button" onClick={onRestart} className="text-[13px]" style={{ color: C.ink3, fontFamily: FONT.sans }}>Start over</button>
+      <div className="mt-4 rounded-lg px-3.5 py-2.5" style={{ background: C.violetSoft, border: `1px solid rgba(124,58,237,0.2)` }}>
+        <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>Tacit may act autonomously inside this boundary. <strong>Canton will refuse a spend outside it.</strong></span>
       </div>
-      {!ready && <div className="mt-2" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12 }}>Waiting for 3 live provider agents before you can approve.</div>}
+      <div className="mt-5 flex flex-wrap items-center gap-4">
+        <button type="button" onClick={onApprove} disabled={!ready}
+          className="rounded-full px-6 py-3" style={{ background: ready ? C.ink : 'rgba(10,10,11,0.28)', color: '#fff', fontFamily: FONT.sans, fontSize: 15, fontWeight: 500, cursor: ready ? 'pointer' : 'not-allowed' }}>Approve mandate &amp; start →</button>
+        <button type="button" onClick={onRestart} className="text-[13.5px] font-medium" style={{ color: C.ink2, fontFamily: FONT.sans }}>Start over</button>
+      </div>
+      {!ready && <div className="mt-2" style={{ color: C.fallback, fontFamily: FONT.sans, fontSize: 12 }}>Waiting for 3 live specialist agents before you can start.</div>}
     </Card>
   );
 }
@@ -443,9 +530,9 @@ function ManualPane({ health, setMode, url, setUrl, budget, setBudget, serviceTy
   const meta = SERVICE_META[serviceType] || SERVICE_META[DEFAULT_SVC];
   const policies = POLICY_BY_SERVICE[serviceType] || [];
   return (
-    <Card style={{ marginTop: 16 }}>
+    <Card style={{ marginTop: 12 }}>
       <div className="mb-3" style={{ color: C.ink3, fontFamily: FONT.sans, fontSize: 12 }}>
-        Prefer plain English? The <button type="button" onClick={() => setMode('agent')} style={{ color: C.violet, fontFamily: FONT.sans, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Agent tab</button> writes this mandate for you.
+        Configure the request by hand. Most people just describe the outcome above and let the agent plan it.
       </div>
       <span style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 13, fontWeight: 600 }}>Service</span>
       <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="Service">
