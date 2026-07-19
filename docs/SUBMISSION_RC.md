@@ -1,5 +1,54 @@
 # Tacit — submission release candidate
 
+## On-ledger spending mandates — a human budget the ledger itself enforces (2026-07-19)
+
+A human principal grants the buyer agent a **private budget envelope** as a Daml contract; every
+procurement **authorizes its spend against that envelope on-ledger** immediately before the award,
+and an exhausted mandate means the **LEDGER refuses the spend** — not the app. This is the
+payments-track "agents coordinate commercial actions safely" pillar, delivered as the program's
+**only unfreeze**: one new, **standalone, additive** Daml package `tacit-mandate`
+(`f3e2d2a9…`) with **no data-dependency** on the frozen packages (it links to jobs by `Text`
+jobId/rfsId). The frozen `tacit` (`fdfbfcf0…`) and `tacit-work` (`9ab077f2…`) are **byte-identical
+this pass** — `git diff daml/ daml3/ tacit-work/ daml3-test/ tacit-work-test/` is **0 bytes**.
+
+**Feature-flagged, OFF by default.** `TACIT_MANDATE_MODE` unset/`off` ⇒ **today's behavior,
+bit-for-bit**: no mandate code path runs (every branch in `work.ts` is guarded by `mandateModeOn()`,
+and every response addition is an optional/spread-guarded field, so the `/api/work/procure` JSON
+and the `/work` UI are byte-for-byte unchanged), and `/api/mandate/status` returns **404**. `on`
+adds a read-only **pre-check** (over-budget ⇒ HTTP **402 `MANDATE_INSUFFICIENT`**, **zero ledger
+writes**) and a **spend authorization** exercised immediately before `Rfs.Award`.
+
+**Honesty — the sequencing is disclosed, not hidden.** Authorization and award are **two separate,
+sequential Canton transactions — NOT atomic.** The invariant we claim and prove is only that the
+**award never precedes authorization**: `Authorize` is exercised right before the award, and its
+failure aborts the procurement before any IOU is created or payment moves. Over-budget / expired /
+out-of-scope refusals are **real on-ledger command failures** (`assertMsg` inside the `Authorize`
+choice) — there are **no simulated refusals** anywhere.
+
+**Privacy is a feature, by design.** A `SpendMandate` is signed by the principal and observed by the
+agent **only**; the **auditor is NOT a stakeholder** — mandates are confidential. `testAuditorExcluded`
+proves the auditor's ledger query returns `[]`. Nothing about mandates appears on `/market`, and no
+mandate values are logged.
+
+**Proven locally (the ledger half is aborted for this submission).** `npm run daml:test:mandate`
+(8 scenarios / 18 checks: authorize-decrements, over-limit-fails, service-scope, expiry, topup-restores,
+revoke, authority-separation, auditor-excluded) and `npm run test:mandate` (8 pure-logic checks) are
+**green**. Per the risk posture, the DAR upload + party allocation were **not** performed: the hosted
+devnet was **refusing WRITES** (HTTP 403 `PERMISSION_DENIED`) from this credential (a transient
+per-credential write-throttle observed earlier this session; reads unaffected), and this environment
+holds **no devnet credentials** (secrets live only in the VM env, by design). So the **ledger half is
+aborted** — the flag stays **OFF**, the app changes are **dormant and proven bit-for-bit**, and the
+running product is **untouched**.
+
+**To turn it on when devnet writes recover** (from the VM, with the devnet env sourced):
+`npm run devnet:bootstrap:mandate` (uploads the DAR, allocates + grants a `TacitPrincipal`, creates a
+`SpendMandate` limit 500) → set `TACIT_MANDATE_MODE=on` + `TACIT_PRINCIPAL_PARTY` → verify with
+`npm run preflight:mandate` (status readable · exact-decrement · over-budget 402 zero-writes · resume
+idempotency · `--deep`: a direct over-limit `Authorize` **fails on the ledger**, then `TopUp` restores).
+Env is documented in `.env.example`; the MCP gains `tacit_mandate_status`.
+
+---
+
 ## Planner hardening — the Agent console can't flake mid-demo (2026-07-15)
 
 The Buyer-Agent planner (the demo centerpiece) now self-corrects. `shared/agentPlanner.ts`

@@ -1,11 +1,23 @@
 {
-  "product": "Tacit — private work exchange for software agents (two live services: vendor security + web performance), a Buyer Agent Console, and a live auditor-view market",
+  "product": "Tacit — private work exchange for software agents (two live services: vendor security + web performance), a Buyer Agent Console, a live auditor-view market, and an ADDITIVE feature-flagged on-ledger spending mandate (tacit-mandate; flag OFF by default, dormant this submission — see onLedgerSpendingMandate)",
   "generatedFrom": "actual test + preflight execution",
   "branch": "main",
   "commit": "18ea257",
   "packages": {
     "core": "fdfbfcf0030194e0a70899d6f9d0d16eb4989459096ad763128240ae43b14cff",
-    "work": "9ab077f2392651a0a10df2233440570b11a7556a27fc4de31db3e775ae0ed0ed"
+    "work": "9ab077f2392651a0a10df2233440570b11a7556a27fc4de31db3e775ae0ed0ed",
+    "mandate": "f3e2d2a95c64607323929d867b33a365c69c229298aad19e0ef6f537d1154d1a"
+  },
+  "frozenPackagesUntouchedThisPass": { "core": true, "work": true, "sourceDiff": "git diff daml/ daml3/ tacit-work/ daml3-test/ tacit-work-test/ == 0 bytes" },
+  "onLedgerSpendingMandate": {
+    "package": "tacit-mandate (standalone; no data-dependency on frozen packages; links to jobs by Text jobId/rfsId)",
+    "featureFlag": "TACIT_MANDATE_MODE",
+    "defaultState": "off",
+    "flagOffIsBitForBit": "every mandate code path in work.ts is guarded by mandateModeOn(); all response additions are optional/spread-guarded, so with the flag off the /api/work/procure response and the /work UI are byte-for-byte today's; /api/mandate/status returns 404",
+    "safetyStory": "each procurement authorizes its spend against a private on-ledger budget envelope; an over-budget/expired/out-of-scope spend is a REAL on-ledger command failure (assertMsg in the Authorize choice), never simulated; a pre-check refuses over-budget jobs BEFORE any ledger write (HTTP 402 MANDATE_INSUFFICIENT, zero writes)",
+    "sequencingDisclosure": "authorization and award are SEPARATE sequential Canton transactions — NOT atomic; the invariant proven is only that the award never precedes authorization (Authorize is exercised immediately before Rfs.Award, and its failure aborts before any IOU is created)",
+    "privacyStory": "a SpendMandate is signed by the principal and observed by the agent ONLY; the auditor is NOT a stakeholder (confidential by design) — testAuditorExcluded proves the auditor's query returns []",
+    "ledgerHalfStatus": "ABORTED for this submission — the hosted devnet was refusing WRITES (HTTP 403 PERMISSION_DENIED) from this credential; per the risk posture the DAR was NOT uploaded and no party was allocated, the flag stays OFF, and the running product is untouched. The package + full test matrix are proven locally; the live preflight runs on devnet write-recovery."
   },
   "damlChangesForSecondService": 0,
   "newRuntimeDependenciesForSecondService": 0,
@@ -28,13 +40,16 @@
     { "name": "planner decision logic (extractJson / repair prompt / fallback selection / repair-recovery / fallback-recovery / honest-failure — no mock server)", "command": "npm run test:planner", "assertions": 5, "result": "pass" },
     { "name": "registry + policy + agent-plan validator (both services)", "command": "npm run test:services", "assertions": 28, "result": "pass" },
     { "name": "work unit", "command": "npm run test:work", "assertions": 18, "result": "pass" },
+    { "name": "tacit-mandate on-ledger test matrix (authorize-decrements / over-limit-fails / service-scope / expiry / topup-restores / revoke / authority-separation / auditor-excluded — real Daml Script ledger)", "command": "npm run daml:test:mandate", "assertions": 18, "result": "pass" },
+    { "name": "spending-mandate pure logic unit (flag gate / precheck sufficient-insufficient-none-expired-scope / eligible-selection / idempotent-authorization)", "command": "npm run test:mandate", "assertions": 8, "result": "pass" },
+    { "name": "LIVE spending-mandate e2e (status readable / exact-decrement / over-budget 402 zero-writes / resume idempotency / --deep direct over-limit REAL ledger failure + TopUp)", "command": "npm run preflight:mandate", "assertions": 0, "result": "pending", "mode": "devnet", "note": "written + ready; NOT yet executed live — the ledger half was aborted (devnet write-throttle) so the DAR is not uploaded. Runs on write-recovery; not counted in totals until it passes." },
     { "name": "LIVE agentic vendor e2e (devnet)", "command": "npm run preflight:agentic", "assertions": 34, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE performance probe e2e (devnet)", "command": "npm run preflight:probe", "assertions": 28, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE buyer-agent console (key-aware: fail-closed hard gate + honest agents OR real hard-gated proposal + real console procurement)", "command": "npm run preflight:console", "assertions": 18, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE auditor-view market (recompute + scoped Iou + recent-form/winsByService + ≥2 distinct recent winners + un-killable default-budget 3-bid)", "command": "npm run preflight:market", "assertions": 26, "result": "pass", "mode": "devnet", "fallback": false },
     { "name": "LIVE original privacy (devnet)", "command": "npm run preflight:e2e -- --require-ledger", "assertions": 11, "result": "pass", "mode": "devnet", "fallback": false }
   ],
-  "totals": { "suites": 13, "assertions": 228 },
+  "totals": { "suites": 15, "assertions": 254, "note": "+2 suites / +26 assertions this pass, all local + green (tacit-mandate daml matrix 18, spending-mandate unit 8). The LIVE preflight:mandate is written but pending devnet write-recovery and is NOT counted." },
   "liveOrigin": "https://tacit.80-225-209-190.sslip.io",
   "verifiedThroughHttps": true
 }
