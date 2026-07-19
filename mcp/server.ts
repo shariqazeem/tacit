@@ -62,7 +62,7 @@ function appDownResult(e: unknown) {
 }
 
 // ── Server ────────────────────────────────────────────────────
-const server = new McpServer({ name: 'tacit', version: '0.6.0' });
+const server = new McpServer({ name: 'tacit', version: '0.7.0' });
 
 const HTTPS_RE = /^https:\/\/[^\s]{1,2048}$/i;
 const workJobId = () => `wjob-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -631,6 +631,72 @@ server.registerTool(
         providers: providers.map((p: any) => ({ id: String(p.id), label: String(p.label), partyShort: String(p.partyShort), earned: Number(p.earned ?? 0), wins: Number(p.wins ?? 0), winShare: Number(p.winShare ?? 0), ready: !!p.ready, servicesAdvertised: Array.isArray(p.servicesAdvertised) ? p.servicesAdvertised.map(String) : [] })),
         recentReceipts: receipts.slice(0, 20).map((r: any) => ({ acceptedAtUtc: String(r.acceptedAtUtc), receiptCidShort: String(r.receiptCidShort), sha256Short: String(r.sha256Short), byteLen: Number(r.byteLen ?? 0), winnerLabel: r.winnerLabel ?? null, amount: r.amount == null ? null : Number(r.amount), serviceType: r.serviceType ?? null })),
         degradation: Array.isArray(data.degradation) ? data.degradation.map(String) : [],
+      },
+    };
+  },
+);
+
+// ── tacit_mandate_status ──────────────────────────────────────
+// Read the agent's STANDING SPEND MANDATE — a private on-ledger budget envelope a human
+// principal granted the buyer agent. Only present when the app runs with TACIT_MANDATE_MODE=on
+// (an additive, feature-flagged capability). Privacy: a mandate is signed by the principal
+// and observed by the agent ONLY — the auditor is never a stakeholder, so this reflects the
+// agent's OWN lawful read. isError when the flag is off or the ledger is unreachable.
+server.registerTool(
+  'tacit_mandate_status',
+  {
+    description:
+      "The buyer agent's standing SPEND MANDATE: a private on-ledger budget envelope a human principal granted it. Returns remaining / limit / currency, the service scope, and any expiry. Every award authorizes its spend against this envelope in a separate Canton transaction, and the LEDGER refuses an over-budget award — an exhausted mandate is a real command failure, not a simulated one. Only available when the app runs with the spend-mandate feature on; isError otherwise. The auditor is never an observer of a mandate — this is the agent's own confidential read.",
+    inputSchema: {},
+    outputSchema: {
+      enabled: z.boolean(),
+      principalShort: z.string().nullable(),
+      hasMandate: z.boolean(),
+      label: z.string().nullable(),
+      currency: z.string().nullable(),
+      limit: z.number().nullable(),
+      remaining: z.number().nullable(),
+      allowedServices: z.array(z.string()),
+      expiresAtUtc: z.string().nullable(),
+    },
+  },
+  async () => {
+    let data: any;
+    try {
+      const res = await fetchJson(`${APP_URL}/api/mandate/status`, {}, 10000);
+      if (res.status === 404) {
+        return { isError: true, content: [{ type: 'text' as const, text: 'Spend-mandate mode is OFF on this deployment — there is no standing mandate to read. (This is an additive, feature-flagged capability; enable TACIT_MANDATE_MODE=on to use it.)' }] };
+      }
+      if (!res.ok || res.json?.ok !== true) {
+        return { isError: true, content: [{ type: 'text' as const, text: `Mandate status unavailable (no fabrication): ${res.json?.error || `HTTP ${res.status}`}` }] };
+      }
+      data = res.json;
+    } catch (e) {
+      return appDownResult(e);
+    }
+    const m = data.mandate || null;
+    const principalShort = data.principal ? `${String(data.principal).slice(0, 12)}…` : null;
+    const scope = m && Array.isArray(m.allowedServices) && m.allowedServices.length ? m.allowedServices.join(', ') : 'any registered service';
+    const lines = m
+      ? [
+          `STANDING SPEND MANDATE — enforced on-ledger (Canton).`,
+          `Remaining: ${m.remaining} of ${m.limit} ${m.currency}${principalShort ? ` · granted by ${principalShort}` : ''}`,
+          `Scope: ${scope}${m.expiresAtUtc ? ` · expires ${String(m.expiresAtUtc).slice(0, 10)}` : ' · no expiry'}`,
+          `Every award authorizes its spend against this envelope BEFORE the award; the ledger refuses an over-budget award. The auditor never sees this mandate.`,
+        ]
+      : ['No standing mandate is currently granted to this agent — a principal must grant one before it can spend.'];
+    return {
+      content: [{ type: 'text' as const, text: lines.join('\n') }],
+      structuredContent: {
+        enabled: true,
+        principalShort,
+        hasMandate: !!m,
+        label: m ? String(m.label) : null,
+        currency: m ? String(m.currency) : null,
+        limit: m ? Number(m.limit) : null,
+        remaining: m ? Number(m.remaining) : null,
+        allowedServices: m && Array.isArray(m.allowedServices) ? m.allowedServices.map(String) : [],
+        expiresAtUtc: m && m.expiresAtUtc ? String(m.expiresAtUtc) : null,
       },
     };
   },
