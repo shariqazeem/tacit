@@ -104,7 +104,7 @@ function StandingMandatePanel() {
   const shortP = s.principal ? `${s.principal.slice(0, 10)}…` : 'your principal';
   return (
     <div className="material-clear mt-5 p-4" style={{ background: C.violetSoft, borderColor: 'rgba(124,58,237,0.2)' }}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="tacit-label" style={{ color: C.violet }}>Standing spend mandate</span>
         <span style={{ color: C.ink3, fontFamily: FONT.mono, fontSize: 10.5 }}>· enforced on-ledger</span>
       </div>
@@ -313,7 +313,8 @@ export function WorkExperience() {
       )}
       {phase === 'resumed' && result && <ResumedView result={result} onNew={startNew} restored={restored} />}
       {phase === 'error' && errorReason === 'LEDGER_WRITE_THROTTLED' && <ThrottleView jobId={jobId} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
-      {phase === 'error' && errorReason !== 'LEDGER_WRITE_THROTTLED' && <ErrorView error={error} uncertain={uncertain} jobId={jobId} url={url} budget={budget} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
+      {phase === 'error' && errorReason === 'MANDATE_INSUFFICIENT' && <MandateRefusalView error={error} onNew={startNew} />}
+      {phase === 'error' && errorReason !== 'LEDGER_WRITE_THROTTLED' && errorReason !== 'MANDATE_INSUFFICIENT' && <ErrorView error={error} uncertain={uncertain} jobId={jobId} url={url} budget={budget} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
     </div>
   );
 }
@@ -580,6 +581,31 @@ function ErrorView({ error, uncertain, jobId, url, budget, onRetry, onNew }: any
           <NewButton onClick={onNew} label="Start a new assessment" />
         </div>
       </Card>
+    </div>
+  );
+}
+
+// The ledger-enforced budget said no. The read-only pre-check ran BEFORE any ledger write,
+// so nothing was started and nothing was spent — a calm, designed refusal, not a failure.
+function MandateRefusalView({ error, onNew }: { error: string; onNew: () => void }) {
+  return (
+    <div className="pt-6">
+      <SectionTitle kicker="standing mandate · enforced on-ledger">Over your standing budget — refused before spending</SectionTitle>
+      <div className="material-clear p-5" style={{ background: C.violetSoft, borderColor: 'rgba(124,58,237,0.2)' }}>
+        <p style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.6 }}>{error}</p>
+        <div className="mt-3 flex flex-col gap-1.5">
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>This was checked <strong>before</strong> any ledger write — the request was never opened, so <strong>nothing was spent</strong> and no bids were solicited.</span>
+          </div>
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>The budget the human principal granted the agent lives on Canton; the ledger itself refuses a spend beyond it — there is no way for the agent to override it.</span>
+          </div>
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>Lower this job’s budget to fit what remains, or ask the principal to top up the mandate.</span>
+          </div>
+        </div>
+        <div className="mt-4"><NewButton onClick={onNew} label="Start a new job" dark /></div>
+      </div>
     </div>
   );
 }

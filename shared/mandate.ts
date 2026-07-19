@@ -60,15 +60,15 @@ export type Precheck =
 export function precheckMandate(mandates: MandateView[], maxBudget: number, serviceType: string, nowIso: string): Precheck {
   const active = mandates.filter((m) => notExpired(m, nowIso));
   if (active.length === 0) {
-    return { ok: false, code: MANDATE_INSUFFICIENT, reason: mandates.length === 0 ? 'no spending mandate has been granted to this agent' : 'the spending mandate has expired' };
+    return { ok: false, code: MANDATE_INSUFFICIENT, reason: mandates.length === 0 ? 'No spending mandate has been granted to this agent yet.' : 'The standing spending mandate has expired.' };
   }
   const forService = active.filter((m) => coversService(m, serviceType));
   if (forService.length === 0) {
-    return { ok: false, code: MANDATE_INSUFFICIENT, reason: `no mandate permits ${serviceType}` };
+    return { ok: false, code: MANDATE_INSUFFICIENT, reason: `No standing mandate permits ${serviceType}.` };
   }
   const m = pickEligibleMandate(forService, serviceType, nowIso)!;
   if (num(m.remaining) < maxBudget) {
-    return { ok: false, code: MANDATE_INSUFFICIENT, reason: `mandate has ${m.remaining} demo credits remaining, below the ${maxBudget} ceiling for this job` };
+    return { ok: false, code: MANDATE_INSUFFICIENT, reason: `This mandate has ${m.remaining} demo credits remaining, below the ${maxBudget} ceiling for this job.` };
   }
   return { ok: true, mandate: m };
 }

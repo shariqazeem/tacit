@@ -38,7 +38,7 @@ ok('mandateEnabled: unset/off=false, on=true (bit-for-bit gate)');
   const r = precheckMandate([], 100, 'vendor_security_assessment', NOW);
   assert.equal(r.ok, false);
   assert.equal(r.code, MANDATE_INSUFFICIENT);
-  assert.ok(/no spending mandate/.test(r.reason));
+  assert.ok(/no spending mandate/i.test(r.reason));
   ok('precheck: no mandate granted → MANDATE_INSUFFICIENT');
 }
 
