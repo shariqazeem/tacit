@@ -31,5 +31,35 @@ Daml/DARs/package-ids/award+mandate semantics/runner identity/ledger adapter = f
 data. USD.demo stays explicit. Auth precedes award; not atomic-together. SSRF/idempotency/throttle/
 privacy preserved. No new package/db/token. Secrets never printed. kyvern/sage untouched.
 
-## Progress
-(updated as checkpoints land)
+## Progress — SHIPPED (deployed live, verified)
+
+- [x] **C1 — Shell + landing.** Nav simplified (How it works · Live proof + one "Run a private
+  assessment" CTA, shown on every page but /work). Hero: PRIVATE PROCUREMENT ON CANTON / "Give your
+  AI agent a budget. It hires the best specialist—privately." + vendor story + primary CTA → /work,
+  secondary → completed Devnet run. LiveStrip → restrained real-data row (Canton Devnet live · N
+  agents · N completed · Daml-enforced). *Commit c…*
+- [x] **C2 — Unified /work.** Inline "Create your private workspace" (no /wallet detour, real account
+  API). Header budget pill → /wallet. "What do you need to decide?" + business-outcome examples.
+  Manual under an Advanced disclosure. MandateCard → "Agent plan" + autonomy line + single "Approve
+  mandate & start". Verified end-to-end locally (account mint → composer + budget pill).
+- [x] **C3 — Result + running hierarchy.** Running stages → the ledger-derived concepts. Decision hero
+  gains outcome summary (winner · spent vs budget-left · verified). Raw hashes/contract-ids collapsed
+  into an "On-ledger proof" disclosure (full copyable evidence kept). SuccessRecap → compact "What
+  Tacit did".
+- [x] **C4 — Context.** Canton Coin demoted to an "Experimental network rail" disclosure in /wallet.
+  /market + /lens route back to /work via the nav CTA.
+- [x] **C5 — Responsive/a11y.** Verified no horizontal overflow at 375 on landing + /work; 1440 polished;
+  reduced-motion preserved; 404 styled + routes to primary action.
+- [x] **C6 — Verify + deploy.** tsc clean · 5 unit suites green (mandate 8, services 28, work 18, market
+  13, planner 5) · frozen daml **0-diff** · production build green · deployed to VM (rsync + rebuild +
+  restart tacit.service only) · all live routes 200, health ok, 46 real completed jobs, kyvern/sage
+  untouched.
+
+### Gotcha logged
+Never run `npm run build` while `next dev` is live — they share `.next` and the build corrupts the dev
+server's chunks (MODULE_NOT_FOUND). Fix: stop dev, `rm -rf .next`, restart dev. Source was never broken.
+
+### Honest limitations that remain
+- Settlement is a `USD.demo` voucher (real-CC rail is wired but demoted, honestly). Authorization
+  precedes award; they are sequential, not atomic-together. Full-job ~11-write bursts can still 503 on
+  the shared 5North validator cap → the honest ThrottleView; single writes (account, top-up, tap) work.
