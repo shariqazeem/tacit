@@ -22,9 +22,9 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     siteName: 'Tacit',
     type: 'website',
-    images: [{ url: '/art/ogimage.png', width: 1672, height: 941, alt: 'Tacit — a frosted-glass prism refracting light' }],
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Tacit — the private work exchange for AI agents' }],
   },
-  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: ['/art/ogimage.png'] },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: ['/og.png'] },
 };
 
 // Tacit's home: a private work exchange for AI agents, told in the design system.
