@@ -1,5 +1,55 @@
 # Tacit — submission release candidate
 
+## Final product pass — judge-path polish, planner 18/18, mandates ACTIVATED live (2026-07-19)
+
+Perfecting the exact path a judge walks. No new features. Everything within the shipped design
+system. **Deployed to the live origin** (rsync + rebuild with `NEXT_PUBLIC_APP_URL` + restart
+`tacit.service` only — runners, nginx, and the co-hosted projects untouched).
+
+**Planner reliability — the item-A gate + fix.** The VM env had **no `TACIT_LLM_FALLBACK_MODEL`**
+(believed set, wasn't). Primary is `deepseek/deepseek-v4-flash` on CommonStack. `planner-smoke` ×3
+= **17/18** with that alone — and both losses were gateway **timeouts** ("could not produce"), not
+misclassifications (every answered case classified correctly; all 9 paraphrase points passed). Added
+`TACIT_LLM_FALLBACK_MODEL=google/gemini-2.5-flash` (reuses the existing key — no new secret); a
+primary timeout now falls through to the fallback. `planner-smoke` ×3 with the fallback = **18/18**.
+The few-shot prompt was left unchanged (tuning can't cure a timeout).
+
+**Mandates ACTIVATED on the real Canton devnet.** Devnet writes had recovered enough to bootstrap:
+- `tacit-mandate` DAR (`f3e2d2a9…`) uploaded; principal `TacitPrincipal::1220a14c…` allocated +
+  granted `CanActAs`; initial `SpendMandate` created (limit 500 → **750 after a live `TopUp(+250)`**,
+  unrestricted scope). `TACIT_MANDATE_MODE=on` + `TACIT_PRINCIPAL_PARTY` set; `tacit.service` restarted.
+- **Live + proven:** `GET /api/mandate/status` → `enabled:true`, remaining **750 of 750**;
+  `StandingMandatePanel` renders on `/work` idle ("enforced on-ledger"); the **402 over-budget
+  pre-check refuses live with ZERO ledger writes** ("This mandate has 750 demo credits remaining,
+  below the … ceiling"); an on-ledger **`TopUp` succeeded**.
+- **Marginal-throttle disclosure (honest):** single submits succeed, but a **full procurement**
+  (a burst of ~10 rapid submits) still trips the devnet write-throttle, so the procure route returns
+  **503** and the designed **`ThrottleView`** engages — the honest-throttle UX doing its job. Two
+  things are therefore *not yet* shown live end-to-end: (a) a complete procurement's authorization +
+  decrement, and (b) the on-ledger over-limit `assertMsg` (the live attempt was masked by the same
+  throttle error). Both are proven by the local `daml:test:mandate` matrix (8 scenarios); the live
+  proof completes on fuller write-recovery via `npm run preflight:mandate --deep`.
+
+**Mandate UX.** New **`MandateRefusalView`** — the 402 `MANDATE_INSUFFICIENT` case now has its own
+*designed* state (was the generic error view): kicker "standing mandate · enforced on-ledger",
+headline "Over your standing budget — refused before spending", and the honest note that the
+read-only pre-check ran **before any ledger write** (nothing spent, no bids solicited). Verified live
+(zero writes). Pre-check reasons sentence-cased. Success-view spend-authorization evidence row + note
+verified by code (a Row structurally identical to the shipped Settlement/Receipt rows). Panel
+layout-stable at 1440 **and 375** (no horizontal overflow).
+
+**Micro-trust.** Styled in-system **404** (`app/not-found.tsx`) — was Next's default — now **live**.
+**OG fixed live**: `og:image` was `http://localhost:3000/art/ogimage.png` (built without
+`NEXT_PUBLIC_APP_URL` + a stale heavy 1.4 MB asset); consolidated the landing to the canonical
+`/og.png` (1200×630) and rebuilt with the env → now `https://tacit.80-225-209-190.sslip.io/og.png`.
+Per-route titles/descriptions present; consoles clean; `/market` refresh zero-layout-shift.
+
+*Item E (a landing "mandated-spend" line) remains **held** by choice:* though mandates are now live,
+the landing copy already matches the mechanics without a mandate claim, and the standing-mandate
+story is told where it belongs — on `/work`.
+
+---
+
 ## Endgame recovery pass — Pass 7 shipped, honest-throttle UX, activation runbook (2026-07-19)
 
 Pass 7 (the on-ledger spending mandates, below) is now **committed + pushed** on `main`
