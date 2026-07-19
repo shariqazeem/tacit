@@ -6,6 +6,11 @@ import { Reveal } from './Reveal';
 
 const STEPS = [
   {
+    n: '00',
+    t: 'You set the budget',
+    d: 'You grant your agent a private SpendMandate on Canton — a spending ceiling only you can raise or revoke. Every award authorizes against it first, and the ledger itself refuses any spend beyond it. The auditor never sees your budget.',
+  },
+  {
     n: '01',
     t: 'Sealed bids',
     d: 'You post a goal as a private request; three provider agents each submit a SealedBid. The ledger makes every price a stakeholder-only fact — no provider can see a competitor’s number.',
@@ -34,7 +39,7 @@ export function HowItWorks() {
       <div className="mx-auto w-full max-w-5xl">
         <Reveal>
           <div style={{ color: C.violet, fontFamily: FONT.mono, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase' }}>How it works</div>
-          <h2 className="mt-3 t-h2" style={{ color: C.ink, maxWidth: '24ch' }}>One request, four contracts, zero leaks.</h2>
+          <h2 className="mt-3 t-h2" style={{ color: C.ink, maxWidth: '26ch' }}>Your budget, your request, five contracts — zero leaks.</h2>
         </Reveal>
 
         <div className="mt-10 grid grid-cols-1 gap-x-10 gap-y-9 sm:grid-cols-2">

@@ -35,16 +35,17 @@ export function Hero() {
           </div>
 
           <h1 className="t-display tacit-rise" style={{ color: C.ink, animationDelay: '0.08s' }}>
-            AI agents hiring
+            Your AI agent hires a private market —
             <br />
-            AI agents — in private.
+            on a budget you control.
           </h1>
 
           <p className="tacit-rise mt-6 text-[16px] leading-relaxed" style={{ color: C.ink2, fontFamily: FONT.sans, maxWidth: '60ch', animationDelay: '0.14s' }}>
-            Tacit is a private work exchange on Canton. Give a goal; three provider agents bid in
-            sealed secrecy; the winner is awarded and paid atomically on-ledger, delivers privately;
-            the buyer re-hashes and recomputes the score to verify it; and an auditor receives a
-            receipt — never the report. Privacy is a property of the ledger, not a promise of the app.
+            You’re a party on Canton. You grant your procurement agent a private, on-ledger budget;
+            it posts your goal as a sealed request, three provider agents bid in secret, the winner is
+            awarded and paid atomically, delivers privately — and the ledger itself refuses any spend
+            beyond what you set. An auditor receives a receipt, never the report. Privacy and your
+            budget are properties of the ledger, not promises of the app.
           </p>
 
           <div className="tacit-rise mt-9 flex flex-wrap items-center gap-5" style={{ animationDelay: '0.2s' }}>
@@ -55,12 +56,12 @@ export function Hero() {
               className="inline-block rounded-full"
               style={{ willChange: 'transform' }}
             >
-              <Link href="/work" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}>
-                Run a real assessment
+              <Link href="/wallet" className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-medium no-underline" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans }}>
+                Open your workspace
                 <span aria-hidden style={{ fontSize: 12 }}>→</span>
               </Link>
             </motion.span>
-            <Link href="/market" className="text-[15px] font-medium no-underline" style={{ color: C.ink2, fontFamily: FONT.sans }}>See the live market →</Link>
+            <Link href="/work" className="text-[15px] font-medium no-underline" style={{ color: C.ink2, fontFamily: FONT.sans }}>Run a live assessment →</Link>
             <button type="button" onClick={toHow} className="text-[15px] font-medium" style={{ color: C.ink3, fontFamily: FONT.sans }}>How it works ↓</button>
           </div>
         </div>
