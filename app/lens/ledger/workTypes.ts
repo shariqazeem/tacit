@@ -144,6 +144,11 @@ export interface WorkError {
   ok: false;
   error: string;
   schema?: number;
+  /** Machine-readable failure class, e.g. 'LEDGER_WRITE_THROTTLED' | 'MANDATE_INSUFFICIENT'.
+   *  Lets the UI/MCP render a specific designed state instead of a generic error. */
+  reason?: string;
+  /** True when retrying the SAME jobId is safe (nothing was started/spent). */
+  retryable?: boolean;
 }
 
 // ── /api/work/health ─────────────────────────────────────────────────────────

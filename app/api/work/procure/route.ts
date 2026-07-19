@@ -6,6 +6,7 @@ import { procureWork } from '@/app/lens/ledger/work';
 import { WORK_SCHEMA, type WorkError } from '@/app/lens/ledger/workTypes';
 import { getService, DEFAULT_SERVICE, policiesForService, type PolicyId } from '@/shared/services';
 import { fetchRunners, quorumFor } from '@/app/lens/ledger/runnerHealth';
+import { classifyLedgerError, LEDGER_WRITE_THROTTLED } from '@/shared/ledgerErrors';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,6 +16,8 @@ const MAX_BODY_BYTES = 4096;
 
 const fail = (error: string, status: number) =>
   NextResponse.json<WorkError>({ ok: false, error, schema: WORK_SCHEMA }, { status });
+const failWith = (reason: string, error: string, status: number, retryable = false) =>
+  NextResponse.json<WorkError>({ ok: false, reason, error, retryable, schema: WORK_SCHEMA }, { status });
 
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -56,9 +59,22 @@ export async function POST(req: Request) {
     const result = await procureWork({ jobId, serviceType, input: inputVal.value, maxBudget, buyerName, requestSource, policyId });
     return NextResponse.json(result);
   } catch (e: any) {
+    const msg = String(e?.message || e);
     // An exhausted/expired/out-of-scope spending mandate is an honest 402 (Payment
     // Required) with ZERO ledger writes — not a 502. The message is the human reason.
-    if (e?.code === 'MANDATE_INSUFFICIENT') return fail(String(e?.message || 'spending mandate insufficient'), 402);
-    return fail(String(e?.message || e), 502);
+    if (e?.code === 'MANDATE_INSUFFICIENT') return failWith('MANDATE_INSUFFICIENT', msg, 402);
+    // The shared devnet validator rate-limits WRITES from a credential after heavy bursts
+    // (HTTP 403 "security-sensitive" / PERMISSION_DENIED). That is NOT a broken app: reads
+    // stay live and this procurement never started, so nothing was spent. Surface it as a
+    // distinct, retryable 503 the UI/MCP render as a calm "devnet is rate-limiting" state.
+    if (classifyLedgerError(msg) === 'throttled') {
+      return failWith(
+        LEDGER_WRITE_THROTTLED,
+        'Canton devnet is rate-limiting writes from this validator right now — the job was not started and nothing was spent. The market and privacy lens (reads) stay live; retrying the same job is safe.',
+        503,
+        true,
+      );
+    }
+    return fail(msg, 502);
   }
 }

@@ -168,6 +168,7 @@ export function WorkExperience() {
   const [result, setResult] = useState<WorkResult | null>(null);
   const [brief, setBrief] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [errorReason, setErrorReason] = useState(''); // machine-readable class, e.g. LEDGER_WRITE_THROTTLED
   const [elapsed, setElapsed] = useState(0);
   const [uncertain, setUncertain] = useState(false);
   const [restored, setRestored] = useState(false);
@@ -224,7 +225,7 @@ export function WorkExperience() {
 
   const run = useCallback(async (reuseId: string | undefined, source: 'browser' | 'console') => {
     const id = reuseId || newJobId();
-    setJobId(id); setError(''); setUncertain(false); setRestored(false); setElapsed(0); setStages({}); setBrief(null); setPhase('running');
+    setJobId(id); setError(''); setErrorReason(''); setUncertain(false); setRestored(false); setElapsed(0); setStages({}); setBrief(null); setPhase('running');
     runnersAtRun.current = health?.runners || [];
     stopPoll();
     pollRef.current = setInterval(async () => {
@@ -236,7 +237,7 @@ export function WorkExperience() {
       const r = await fetch('/api/work/procure', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType, input: { url }, maxBudget: budget, policyId, requestSource: source, buyerName: 'Judge-Agent' }), signal: ctrl.signal });
       const data = await r.json();
       stopPoll();
-      if (!r.ok || !data?.ok) { setError(String(data?.error || `request failed (HTTP ${r.status})`)); setPhase('error'); return; }
+      if (!r.ok || !data?.ok) { setError(String(data?.error || `request failed (HTTP ${r.status})`)); setErrorReason(String(data?.reason || '')); setPhase('error'); return; }
       const wr = data as WorkResult;
       setResult(wr);
       if (wr.artifact.available) {
@@ -272,7 +273,7 @@ export function WorkExperience() {
 
   const startNew = useCallback(() => {
     try { sessionStorage.removeItem(STORE_KEY); } catch { /* ignore */ }
-    stopPoll(); setResult(null); setBrief(null); setError(''); setUncertain(false); setRestored(false); setJobId(''); setStages({}); setProposal(null); setAgentStep('compose'); setGoalText(''); setPhase('idle'); loadHealth();
+    stopPoll(); setResult(null); setBrief(null); setError(''); setErrorReason(''); setUncertain(false); setRestored(false); setJobId(''); setStages({}); setProposal(null); setAgentStep('compose'); setGoalText(''); setPhase('idle'); loadHealth();
   }, [loadHealth]);
 
   useEffect(() => () => stopPoll(), []);
@@ -311,7 +312,8 @@ export function WorkExperience() {
         </div>
       )}
       {phase === 'resumed' && result && <ResumedView result={result} onNew={startNew} restored={restored} />}
-      {phase === 'error' && <ErrorView error={error} uncertain={uncertain} jobId={jobId} url={url} budget={budget} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
+      {phase === 'error' && errorReason === 'LEDGER_WRITE_THROTTLED' && <ThrottleView jobId={jobId} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
+      {phase === 'error' && errorReason !== 'LEDGER_WRITE_THROTTLED' && <ErrorView error={error} uncertain={uncertain} jobId={jobId} url={url} budget={budget} onRetry={() => run(jobId, 'console')} onNew={startNew} />}
     </div>
   );
 }
@@ -578,6 +580,40 @@ function ErrorView({ error, uncertain, jobId, url, budget, onRetry, onNew }: any
           <NewButton onClick={onNew} label="Start a new assessment" />
         </div>
       </Card>
+    </div>
+  );
+}
+
+// Reactive-only (never a proactive canary): shown when the shared devnet validator is
+// rate-limiting WRITES from our credential. A calm, designed state — the job never started
+// and nothing was spent; reads (market, lens) stay fully live.
+function ThrottleView({ jobId, onRetry, onNew }: { jobId: string; onRetry: () => void; onNew: () => void }) {
+  return (
+    <div className="pt-6">
+      <SectionTitle kicker="devnet write rate-limit · not an app failure">Canton devnet is rate-limiting writes right now</SectionTitle>
+      <div className="material-clear p-5" style={{ background: C.violetSoft, borderColor: 'rgba(124,58,237,0.2)' }}>
+        <p style={{ color: C.ink, fontFamily: FONT.sans, fontSize: 14.5, lineHeight: 1.6 }}>
+          The shared devnet validator is temporarily refusing new <em>writes</em> from our credential (a per-credential
+          burst limit on the Global Synchronizer). This job <strong>was not started</strong> and <strong>nothing was
+          spent</strong> — it never reached the ledger.
+        </p>
+        <div className="mt-3 flex flex-col gap-1.5">
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>Reads stay fully live — the <Link href="/market" className="no-underline" style={{ color: C.ink, fontWeight: 600 }}>market feed</Link> and the <Link href="/lens" className="no-underline" style={{ color: C.ink, fontWeight: 600 }}>privacy lens</Link> show real on-ledger history right now.</span>
+          </div>
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>The limit resets on its own; there is no simulated fallback and we never fabricate a result.</span>
+          </div>
+          <div className="flex items-start gap-2" style={{ color: C.ink2, fontFamily: FONT.sans, fontSize: 13, lineHeight: 1.5 }}>
+            <span style={{ color: C.violet }}>•</span><span>Try again reuses the same job id — the ledger is idempotent, so a retry can never double-spend.</span>
+          </div>
+        </div>
+        <div className="mt-3"><Row label="Job id" mono>{jobId}</Row></div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" onClick={onRetry} className="rounded-full px-5 py-2.5" style={{ background: C.ink, color: '#fff', fontFamily: FONT.sans, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Try again (same job)</button>
+          <NewButton onClick={onNew} label="Start over" />
+        </div>
+      </div>
     </div>
   );
 }

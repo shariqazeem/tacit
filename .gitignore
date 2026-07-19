@@ -70,3 +70,4 @@ tacit-mandate/.daml/
 tacit-mandate-test/.daml/
 
 runner/src/_mandate.ts
+runner/src/_ledgerErrors.ts

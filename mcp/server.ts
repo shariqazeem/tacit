@@ -61,6 +61,22 @@ function appDownResult(e: unknown) {
   };
 }
 
+// A failed procurement → a clean isError. The shared devnet validator rate-limits WRITES
+// from our credential after bursts (the app maps that to reason LEDGER_WRITE_THROTTLED, a
+// 503) — surface it honestly as a transient rate-limit where NOTHING was started or spent,
+// distinct from a genuine failure. No simulation, ever.
+function procureFailResult(res: { status: number; json: any }, id: string, label: string) {
+  if (res.json?.reason === 'LEDGER_WRITE_THROTTLED') {
+    return {
+      isError: true,
+      content: [{ type: 'text' as const, text:
+        `Canton devnet is rate-limiting WRITES from this validator credential right now — the ${label} job was NOT started and nothing was spent (reads stay live: tacit_market_overview still works). This is a transient per-credential burst limit on the shared devnet, not an app failure and not a simulation. Reuse job id ${id} once the limit resets — the ledger is idempotent, so a retry can never double-pay.` }],
+    };
+  }
+  const err = res.json?.error || `HTTP ${res.status}`;
+  return { isError: true, content: [{ type: 'text' as const, text: `${label} failed (no fallback): ${err}\nJob id ${id} — reuse it to safely resume (idempotent, no double payment).` }] };
+}
+
 // ── Server ────────────────────────────────────────────────────
 const server = new McpServer({ name: 'tacit', version: '0.7.0' });
 
@@ -332,10 +348,7 @@ server.registerTool(
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: id, serviceType: 'site_audit', input: { url }, maxBudget, buyerName: buyerLabel }) },
         150000,
       );
-      if (!res.ok || !res.json?.ok) {
-        const err = res.json?.error || `HTTP ${res.status}`;
-        return { isError: true, content: [{ type: 'text' as const, text: `Tacit Work procurement failed (no fallback): ${err}\nJob id ${id} — reuse it with tacit_procure_work to safely resume (idempotent, no double payment).` }] };
-      }
+      if (!res.ok || !res.json?.ok) return procureFailResult(res, id, 'Tacit Work site_audit');
       data = res.json;
     } catch (e) {
       return appDownResult(e);
@@ -450,7 +463,7 @@ server.registerTool(
         150000,
       );
       if (!res.ok || !res.json?.ok) {
-        return { isError: true, content: [{ type: 'text' as const, text: `Vendor assessment failed (no fallback): ${res.json?.error || `HTTP ${res.status}`}\nJob id ${id} — reuse it to safely resume.` }] };
+        return procureFailResult(res, id, 'Vendor assessment');
       }
       data = res.json;
     } catch (e) {
@@ -522,7 +535,7 @@ server.registerTool(
         150000,
       );
       if (!res.ok || !res.json?.ok) {
-        return { isError: true, content: [{ type: 'text' as const, text: `Performance probe failed (no fallback): ${res.json?.error || `HTTP ${res.status}`}\nJob id ${id} — reuse it to safely resume.` }] };
+        return procureFailResult(res, id, 'Performance probe');
       }
       data = res.json;
     } catch (e) {

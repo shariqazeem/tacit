@@ -28,6 +28,7 @@
     "test:services": "node scripts/test-services.mjs",
     "test:market": "node scripts/test-market.mjs",
     "test:mandate": "node scripts/test-mandate-unit.mjs",
+    "test:ledger-errors": "node scripts/test-ledger-errors.mjs",
     "test:planner": "node scripts/test-planner.mjs",
     "planner:smoke": "node scripts/planner-smoke.mjs",
     "demo:prime": "node scripts/demo-prime.mjs",

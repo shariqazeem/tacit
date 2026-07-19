@@ -15,6 +15,7 @@ const files = [
   { src: 'shared/market.ts', dst: 'runner/src/_market.ts' },
   { src: 'shared/agentPlanner.ts', dst: 'runner/src/_agentPlanner.ts' },
   { src: 'shared/mandate.ts', dst: 'runner/src/_mandate.ts' },
+  { src: 'shared/ledgerErrors.ts', dst: 'runner/src/_ledgerErrors.ts' },
 ];
 for (const { src, dst } of files) {
   const body = readFileSync(resolve(here, '..', src), 'utf8');
